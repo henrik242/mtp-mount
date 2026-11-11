@@ -1,0 +1,49 @@
+name: MtpMount
+options:
+  bundleIdPrefix: no.synth.mtpmount
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.40.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 358L7UXVJ4
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Developer ID Application"
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    PRODUCT_NAME: "$(TARGET_NAME)"
+    # debug-dylib/preview indirection breaks out-of-process extension loading
+    ENABLE_DEBUG_DYLIB: NO
+    ENABLE_PREVIEWS: NO
+
+targets:
+  MtpMount:
+    type: application
+    platform: macOS
+    sources: [App, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: no.synth.mtpmount
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/App.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        PROVISIONING_PROFILE_SPECIFIER: "MtpMount App DevID"
+    dependencies:
+      - target: MtpMountFileProvider
+        embed: true
+
+  MtpMountFileProvider:
+    type: app-extension
+    platform: macOS
+    sources: [Extension, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: no.synth.mtpmount.fileprovider
+        INFOPLIST_FILE: Extension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Extension/Extension.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        PROVISIONING_PROFILE_SPECIFIER: "MtpMount FileProvider DevID"
