@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -8,8 +9,15 @@ struct MtpMountApp: App {
         WindowGroup("MtpMount") {
             ContentView()
                 .environmentObject(controller)
-                .frame(minWidth: 460, minHeight: 260)
-                .task { await controller.register() }
+                .frame(minWidth: 480, minHeight: 280)
+                .task {
+                    await controller.register()
+                    // Launched by the helper just to add a Finder location for a
+                    // newly attached device: done, quit again.
+                    if CommandLine.arguments.contains(MtpAgentConfig.syncDomainsArgument) {
+                        NSApplication.shared.terminate(nil)
+                    }
+                }
         }
         .windowResizability(.contentSize)
     }
@@ -30,7 +38,7 @@ struct ContentView: View {
                        detail: "MtpMount must run from the Applications folder. Quit it, drag it to Applications, and open it from there.")
             }
 
-            if controller.domainRegistered && controller.extensionEnabled == false {
+            if controller.rows.contains(where: \.needsEnabling) {
                 Notice(symbol: "puzzlepiece.extension.fill", tint: .orange,
                        title: "Turn on the MtpMount extension",
                        detail: "In System Settings → General → Login Items & Extensions, enable MtpMount under File Providers.") {
@@ -38,12 +46,21 @@ struct ContentView: View {
                 }
             }
 
-            deviceRow
+            problemRow
 
-            HStack {
-                Button("Show in Finder") { Task { await controller.showInFinder() } }
-                    .disabled(!controller.domainRegistered)
-                Spacer()
+            if controller.rows.isEmpty {
+                if controller.checked && controller.problem == .none {
+                    Notice(symbol: "cable.connector", tint: .secondary, title: "No device connected",
+                           detail: "Connect an MTP device (phone, camera, GPS, music player…) with a USB data cable and unlock it. On a phone, choose “File transfer” in the USB notification.")
+                } else if !controller.checked {
+                    Notice(symbol: "ellipsis.circle", tint: .secondary, title: "Checking for devices…", detail: nil)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(controller.rows) { row in
+                        DeviceRowView(row: row)
+                    }
+                }
             }
 
             DisclosureGroup("Troubleshooting", isExpanded: $showTroubleshooting) {
@@ -52,13 +69,13 @@ struct ContentView: View {
                           systemImage: controller.agentLoaded ? "checkmark.circle" : "xmark.circle")
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
-                        Button("Refresh Finder") { Task { await controller.signalChange() } }
+                        Button("Refresh Finder") { Task { await controller.signalAll() } }
                         Button("Reinstall helper") { Task { await controller.registerAgent(force: true) } }
                         Button("Reset") { Task { await controller.reset() } }
-                            .help("Removes and re-adds the Finder location. Downloaded copies are discarded.")
+                            .help("Removes and re-adds the Finder locations. Downloaded copies are discarded.")
                     }
                     Button("Uninstall…", role: .destructive) { Task { await controller.uninstall() } }
-                        .help("Removes the helper and the Finder location so the app can be deleted.")
+                        .help("Removes the helper and the Finder locations so the app can be deleted.")
                 }
                 .padding(.top, 6)
             }
@@ -71,27 +88,20 @@ struct ContentView: View {
         }
         .padding(20)
         .task {
-            // Keep the device state current while the window is open.
+            // Keep the device list current while the window is open.
             while !Task.isCancelled {
-                await controller.refreshDevice()
-                await controller.refreshDomain()
                 try? await Task.sleep(for: .seconds(3))
+                await controller.refresh()
             }
         }
     }
 
-    @ViewBuilder private var deviceRow: some View {
-        switch controller.device {
-        case .checking:
-            Notice(symbol: "ellipsis.circle", tint: .secondary, title: "Checking for a device…", detail: nil)
-        case .connected(let name):
-            Notice(symbol: "checkmark.circle.fill", tint: .green, title: "Connected: \(name)",
-                   detail: "Browse it in Finder's sidebar under Locations, or with “Show in Finder”.")
-        case .noDevice:
-            Notice(symbol: "cable.connector", tint: .secondary, title: "No device connected",
-                   detail: "Connect an MTP device (phone, camera, GPS, music player…) with a USB data cable and unlock it. On a phone, choose “File transfer” in the USB notification.")
+    @ViewBuilder private var problemRow: some View {
+        switch controller.problem {
+        case .none:
+            EmptyView()
         case .busy(let message):
-            Notice(symbol: "hand.raised.fill", tint: .orange, title: "Device is in use by another app",
+            Notice(symbol: "hand.raised.fill", tint: .orange, title: "A device is in use by another app",
                    detail: message.isEmpty
                        ? "Quit Image Capture, Android File Transfer, OpenMTP or the device maker's sync app, then reconnect."
                        : message)
@@ -100,6 +110,28 @@ struct ContentView: View {
                    detail: "Open Troubleshooting and choose “Reinstall helper”.")
         case .error(let message):
             Notice(symbol: "exclamationmark.triangle.fill", tint: .red, title: "Device error", detail: message)
+        }
+    }
+}
+
+/// One device: its state and what can be done with it.
+private struct DeviceRowView: View {
+    @EnvironmentObject var controller: DomainController
+    let row: DeviceRow
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Notice(symbol: row.connected ? "checkmark.circle.fill" : "powerplug",
+                   tint: row.connected ? .green : .secondary,
+                   title: row.name,
+                   detail: row.connected ? "Connected" : "Not connected — its folder shows again when you reconnect it.")
+            Spacer()
+            Button("Show in Finder") { Task { await controller.showInFinder(row) } }
+                .disabled(!row.connected)
+            if !row.connected {
+                Button("Forget") { Task { await controller.forget(row) } }
+                    .help("Removes this device's location from Finder.")
+            }
         }
     }
 }

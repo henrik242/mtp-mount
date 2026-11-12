@@ -39,7 +39,7 @@ final class FileProviderItemTests: XCTestCase {
     }
 
     func testRootCannotBeDeletedRenamedOrMoved() {
-        let caps = FileProviderItem(root: "MTP Device").capabilities
+        let caps = FileProviderItem(root: "Galaxy S25").capabilities
         XCTAssertTrue(caps.contains(.allowsAddingSubItems))
         XCTAssertFalse(caps.contains(.allowsDeleting))
         XCTAssertFalse(caps.contains(.allowsRenaming))
@@ -161,14 +161,12 @@ final class ClassifierTests: XCTestCase {
 }
 
 final class SyncAnchorTests: XCTestCase {
-    private func status(_ session: String?, serial: String? = "S1", connected: Bool = true) -> AgentStatus {
-        AgentStatus(connected: connected, deviceName: "Phone", serial: serial, sessionID: session,
-                    failure: nil, message: nil)
+    private func status(_ session: String, serial: String? = "S1") -> DeviceStatus {
+        DeviceStatus(key: "mtp-S1", name: "Phone", serial: serial, sessionID: session, changeSeq: 0)
     }
 
     func testOfflineAnchor() {
         XCTAssertEqual(SyncAnchor.make(nil), SyncAnchor.offline)
-        XCTAssertEqual(SyncAnchor.make(status(nil, connected: false)), SyncAnchor.offline)
         XCTAssertNil(SyncAnchor(SyncAnchor.offline))
         XCTAssertNil(SyncAnchor(Data("S1|x-1".utf8)), "anchors from older versions are not understood")
     }

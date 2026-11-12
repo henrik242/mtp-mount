@@ -33,12 +33,25 @@ enum DeviceEvent: Equatable {
 /// Byte progress for a transfer: called with (done, total); return false to cancel.
 typealias TransferProgress = (_ done: UInt64, _ total: UInt64) -> Bool
 
-/// The device operations the agent needs. `MtpSession` implements it over
-/// libmtp; tests use an in-memory fake. Not thread-safe: callers serialize.
+/// An MTP device seen on USB but not necessarily opened.
+struct RawDeviceInfo: Equatable, Hashable {
+    /// USB bus location + device number: identifies the attachment.
+    var location: UInt64
+    var vendor: UInt16
+    var product: UInt16
+}
+
+/// Finds and opens devices. `LibmtpBus` implements it over libmtp; tests use a
+/// fake. Not thread-safe: callers serialize.
+protocol MtpBus: AnyObject {
+    func detect() throws -> [RawDeviceInfo]
+    /// Open a detected device. Throws `.noDevice` or `.deviceBusy`.
+    func open(_ device: RawDeviceInfo) throws -> MtpDevice
+}
+
+/// The operations on one open device. `MtpSession` implements it over libmtp;
+/// tests use an in-memory fake. Not thread-safe: callers serialize.
 protocol MtpDevice: AnyObject {
-    var isOpen: Bool { get }
-    /// Open the device. Throws `.noDevice` or `.deviceBusy`.
-    func open() throws
     /// Release the device. Returns false if it couldn't be released safely
     /// (libmtp would be left with a pending USB transfer pointing at freed
     /// memory); the handle is then abandoned and the owner should restart the

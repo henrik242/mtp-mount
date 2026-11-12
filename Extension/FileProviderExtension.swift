@@ -17,10 +17,12 @@ let extLog = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "ext")
 /// state wins and nothing is touched.
 final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     let domain: NSFileProviderDomain
-    private let agent = AgentClient.shared
+    /// The device this domain shows (its identifier is the device's key).
+    private let agent: AgentClient
 
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
+        self.agent = AgentClient(device: domain.identifier.rawValue)
         super.init()
         extLog.info("FileProviderExtension init domain=\(domain.identifier.rawValue, privacy: .public)")
     }
@@ -42,7 +44,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
               completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) -> Progress {
         extLog.debug("item(for: \(identifier.rawValue, privacy: .public))")
         if identifier == .rootContainer {
-            completionHandler(FileProviderItem(root: FP.domainDisplayName), nil)
+            completionHandler(FileProviderItem(root: domain.displayName), nil)
             return Progress()
         }
         guard let objectID = MtpID.objectID(for: identifier) else {
@@ -91,7 +93,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier,
                     request: NSFileProviderRequest) throws -> NSFileProviderEnumerator {
         extLog.debug("enumerator(for: \(containerItemIdentifier.rawValue, privacy: .public))")
-        return Enumerator(container: containerItemIdentifier)
+        return Enumerator(container: containerItemIdentifier, agent: agent)
     }
 
     // MARK: - Writes
