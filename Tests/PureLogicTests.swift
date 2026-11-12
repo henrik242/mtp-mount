@@ -47,8 +47,10 @@ final class FileProviderItemTests: XCTestCase {
     }
 
     func testCapabilitiesNeverOfferInPlaceWritesOrTrash() {
+        // (.allowsAddingSubItems is the same bit as .allowsWriting, so only
+        // files can be checked for in-place writes.)
+        XCTAssertFalse(FileProviderItem(entry: entry()).capabilities.contains(.allowsWriting))
         for item in [FileProviderItem(entry: entry()), FileProviderItem(entry: entry(folder: true))] {
-            XCTAssertFalse(item.capabilities.contains(.allowsWriting))
             XCTAssertFalse(item.capabilities.contains(.allowsTrashing))
             XCTAssertTrue(item.capabilities.contains(.allowsDeleting))
         }
