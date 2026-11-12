@@ -10,12 +10,15 @@ Finder's sidebar, and is usable from the Terminal (`ls`, `cp`, `rsync`).
 - **Phase 0 (done):** signed File Provider app + extension serving a static test
   tree, proving the full macOS pipeline (signing, provisioning, entitlements,
   app group, replicated classification, enablement, enumeration, content fetch).
-- **Phase 1 (done, read-only):** the extension serves the **real device** over a
-  `libmtp` background agent + XPC. Browse the Edge in Finder and the Terminal and
-  copy files off it (`ls`, `cp`, `rsync`). Verified: copied `.fit` bytes are
-  identical to a direct libmtp download.
-- **Later:** writes (upload courses/workouts, delete); bundle libmtp for
-  notarized distribution.
+- **Phase 1 (done):** the extension serves the **real device** over a `libmtp`
+  background agent + XPC. Browse the Edge in Finder and the Terminal and copy
+  files off it (`ls`, `cp`, `rsync`). Verified: copied `.fit` bytes are identical
+  to a direct libmtp download.
+- **Phase 2 (done):** read **/write**. Upload files (e.g. courses/workouts into
+  `Garmin/NewFiles`), create folders, rename, move, and delete — all from Finder
+  or the Terminal. In-place content edits aren't offered (MTP has no partial
+  write; an edit would change the object id).
+- **Later:** bundle libmtp into the app for a notarized, self-contained build.
 
 ## Architecture
 

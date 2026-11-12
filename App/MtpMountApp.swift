@@ -188,7 +188,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Garmin MTP Mount")
                 .font(.title2).bold()
-            Text("Phase 1 — live device over libmtp + XPC (read-only)")
+            Text("Live device over libmtp + XPC (read/write)")
                 .foregroundStyle(.secondary)
 
             HStack {

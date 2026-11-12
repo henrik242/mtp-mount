@@ -82,6 +82,58 @@ final class AgentClient {
         }
     }
 
+    // MARK: - Writes
+
+    /// Upload a local file as a new object under `parent`. Returns the new MTP id.
+    func upload(parent: UInt32, name: String, source: URL,
+                completion: @escaping (Result<UInt32, Error>) -> Void) {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: source.path)
+        let size = (attrs?[.size] as? UInt64) ?? 0
+        guard let handle = try? FileHandle(forReadingFrom: source) else {
+            completion(.failure(Self.err("cannot open source file"))); return
+        }
+        guard let p = proxy({ try? handle.close(); completion(.failure($0)) }) else {
+            try? handle.close(); completion(.failure(Self.err("no connection"))); return
+        }
+        p.upload(parent: parent, name: name, size: size, from: handle) { newID, errMsg in
+            try? handle.close()
+            if let errMsg { completion(.failure(Self.err(errMsg))) }
+            else { completion(.success(newID)) }
+        }
+    }
+
+    func createFolder(parent: UInt32, name: String,
+                      completion: @escaping (Result<UInt32, Error>) -> Void) {
+        guard let p = proxy({ completion(.failure($0)) }) else {
+            completion(.failure(Self.err("no connection"))); return
+        }
+        p.createFolder(parent: parent, name: name) { newID, errMsg in
+            if let errMsg { completion(.failure(Self.err(errMsg))) }
+            else { completion(.success(newID)) }
+        }
+    }
+
+    func delete(objectID: UInt32, completion: @escaping (Error?) -> Void) {
+        guard let p = proxy({ completion($0) }) else { completion(Self.err("no connection")); return }
+        p.delete(objectID: objectID) { errMsg in
+            completion(errMsg.map { Self.err($0) })
+        }
+    }
+
+    func rename(objectID: UInt32, to newName: String, completion: @escaping (Error?) -> Void) {
+        guard let p = proxy({ completion($0) }) else { completion(Self.err("no connection")); return }
+        p.rename(objectID: objectID, to: newName) { errMsg in
+            completion(errMsg.map { Self.err($0) })
+        }
+    }
+
+    func move(objectID: UInt32, toParent newParent: UInt32, completion: @escaping (Error?) -> Void) {
+        guard let p = proxy({ completion($0) }) else { completion(Self.err("no connection")); return }
+        p.move(objectID: objectID, toParent: newParent) { errMsg in
+            completion(errMsg.map { Self.err($0) })
+        }
+    }
+
     private static func err(_ message: String) -> NSError {
         NSError(domain: "no.synth.mtpmount.agent", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: message])

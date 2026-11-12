@@ -92,7 +92,41 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     options: NSFileProviderCreateItemOptions = [],
                     request: NSFileProviderRequest,
                     completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void) -> Progress {
-        completionHandler(nil, [], false, fpError(.notAuthenticated))
+        guard let parent = MtpID.listParent(for: itemTemplate.parentItemIdentifier) else {
+            completionHandler(nil, [], false, fpError(.noSuchItem))
+            return Progress()
+        }
+        let name = itemTemplate.filename
+        let isFolder = (itemTemplate.contentType?.conforms(to: .folder)) ?? false
+        extLog.info("createItem name=\(name, privacy: .public) folder=\(isFolder) parent=\(parent)")
+
+        let made: (UInt32, UInt64) -> Void = { newID, size in
+            let entry = MtpEntry(id: newID, parentID: parent, storageID: 0,
+                                 name: name, size: size, isFolder: isFolder,
+                                 modified: Date().timeIntervalSince1970)
+            completionHandler(FileProviderItem(entry: entry), [], false, nil)
+        }
+
+        if isFolder {
+            AgentClient.shared.createFolder(parent: parent, name: name) { result in
+                switch result {
+                case .success(let id): made(id, 0)
+                case .failure(let e):  completionHandler(nil, [], false, e)
+                }
+            }
+        } else {
+            guard let url else {
+                completionHandler(nil, [], false, fpError(.noSuchItem))
+                return Progress()
+            }
+            let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? UInt64) ?? 0
+            AgentClient.shared.upload(parent: parent, name: name, source: url) { result in
+                switch result {
+                case .success(let id): made(id, size)
+                case .failure(let e):  completionHandler(nil, [], false, e)
+                }
+            }
+        }
         return Progress()
     }
 
@@ -103,7 +137,40 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     options: NSFileProviderModifyItemOptions = [],
                     request: NSFileProviderRequest,
                     completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void) -> Progress {
-        completionHandler(nil, [], false, fpError(.notAuthenticated))
+        guard let objectID = UInt32(item.itemIdentifier.rawValue) else {
+            completionHandler(nil, [], false, fpError(.noSuchItem))
+            return Progress()
+        }
+        // We advertise rename + move (reparent). Apply whichever changed, then
+        // return the freshly-read item.
+        let finish: () -> Void = {
+            AgentClient.shared.item(objectID: objectID) { result in
+                switch result {
+                case .success(let entry?): completionHandler(FileProviderItem(entry: entry), [], false, nil)
+                case .success(nil):        completionHandler(nil, [], false, fpError(.noSuchItem))
+                case .failure(let e):      completionHandler(nil, [], false, e)
+                }
+            }
+        }
+
+        let applyMove: () -> Void = {
+            if changedFields.contains(.parentItemIdentifier),
+               let newParent = MtpID.listParent(for: item.parentItemIdentifier) {
+                AgentClient.shared.move(objectID: objectID, toParent: newParent) { err in
+                    if let err { completionHandler(nil, [], false, err) } else { finish() }
+                }
+            } else {
+                finish()
+            }
+        }
+
+        if changedFields.contains(.filename) {
+            AgentClient.shared.rename(objectID: objectID, to: item.filename) { err in
+                if let err { completionHandler(nil, [], false, err) } else { applyMove() }
+            }
+        } else {
+            applyMove()
+        }
         return Progress()
     }
 
@@ -112,7 +179,13 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     options: NSFileProviderDeleteItemOptions = [],
                     request: NSFileProviderRequest,
                     completionHandler: @escaping (Error?) -> Void) -> Progress {
-        completionHandler(fpError(.notAuthenticated))
+        guard let objectID = UInt32(identifier.rawValue) else {
+            completionHandler(fpError(.noSuchItem))
+            return Progress()
+        }
+        AgentClient.shared.delete(objectID: objectID) { err in
+            completionHandler(err)
+        }
         return Progress()
     }
 }
