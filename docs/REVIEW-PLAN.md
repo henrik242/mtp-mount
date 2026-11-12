@@ -19,7 +19,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [ ] 4. libmtp error stack is read after every call and cleared (no silent "empty folder" / "no such item" on I/O errors, no unbounded growth)
 
 ## High
-- [ ] 5. App launch no longer wipes the domain (`removeAllDomains`) or boots out a running agent; explicit "Reset" instead
+- [x] 5. App launch no longer wipes the domain (`removeAllDomains`) or boots out a running agent; explicit "Reset" instead
 - [ ] 6. Agent drops the USB session only on transport errors, not on logical refusals
 - [ ] 7. Structured errors over XPC, mapped to `NSFileProviderError` (`serverUnreachable`, `noSuchItem`, `filenameCollision`, `insufficientQuota`, `directoryNotEmpty`, …)
 - [ ] 8. `modifyItem`: content edits / unknown parents (Trash) are rejected instead of silently "succeeding"; `baseVersion` checked
@@ -34,7 +34,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [ ] Move checks the MoveObject capability and returns "unsupported" instead of resetting the session
 - [ ] Defensive parent filtering when listing (devices that ignore the parent filter at root)
 - [ ] Detection of an absent device is rate-limited (no USB probe storm)
-- [ ] `launchctl` runs off the main actor and reads the pipe before waiting
+- [x] `launchctl` runs off the main actor and reads the pipe before waiting
 - [ ] AgentClient: interruption keeps the connection; invalidation only clears the matching connection; temp file removed on XPC error; temp files go in the domain's temporary directory
 - [ ] LaunchAgent plist is rewritten + re-bootstrapped when the app has moved; warn when not run from /Applications
 - [ ] `disable-library-validation` only in Debug (release agent signed without it)
@@ -52,7 +52,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [ ] `project.yml` duplicates removed; stale SMAppService comment corrected
 - [ ] Agent boilerplate collapsed into one helper
 - [ ] Hard-coded "Garmin Edge" root name uses `FP.domainDisplayName`; team ID / subsystem in one place
-- [ ] Force-unwraps of `error!` removed
+- [x] Force-unwraps of `error!` removed
 - [ ] *deferred* — pin GitHub Actions by SHA
 - [ ] *deferred* — localization (`.xcstrings`)
 - [ ] *won't fix (needs hardware)* — libmtp timestamp timezone interpretation

@@ -13,7 +13,7 @@ struct MtpMountApp: App {
             ContentView()
                 .environmentObject(controller)
                 .frame(minWidth: 420, minHeight: 240)
-                .task { controller.register() }
+                .task { await controller.register() }
         }
         .windowResizability(.contentSize)
     }
@@ -24,11 +24,10 @@ struct MtpMountApp: App {
 final class DomainController: ObservableObject {
     @Published var status: String = "Not registered"
     @Published var agentStatus: String = "Agent: unknown"
-    @Published var cloudStoragePath: String = ""
 
     init() {
+        Task { await refreshAgentStatus() }
         refreshStatus()
-        refreshAgentStatus()
     }
 
     /// Path to the embedded libmtp helper executable.
@@ -42,11 +41,10 @@ final class DomainController: ObservableObject {
             .appendingPathComponent("Library/LaunchAgents/\(MtpAgentConfig.agentLabel).plist")
     }
 
-    /// Install the helper as a launchd agent the classic way: write a per-user
-    /// LaunchAgent plist and (re)bootstrap it. Run on-demand via its mach service.
-    /// (SMAppService's BTM path refuses a non-sandboxed helper here, so we drive
-    /// launchd directly — the app is non-sandboxed, so this is permitted.)
-    func registerAgent() {
+    private var launchdTarget: String { "gui/\(getuid())/\(MtpAgentConfig.agentLabel)" }
+
+    /// The LaunchAgent plist for the helper at its current location.
+    private func launchAgentPlist() throws -> Data {
         let plist: [String: Any] = [
             "Label": MtpAgentConfig.agentLabel,
             "ProgramArguments": [helperURL.path],
@@ -54,123 +52,141 @@ final class DomainController: ObservableObject {
             "RunAtLoad": false,
             "ProcessType": "Adaptive",
         ]
+        return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+    }
+
+    /// Install the helper as a launchd agent the classic way: write a per-user
+    /// LaunchAgent plist and bootstrap it. launchd starts it on demand via its
+    /// mach service. (SMAppService's BTM path refuses a non-sandboxed helper
+    /// here, so we drive launchd directly — the app is non-sandboxed.)
+    ///
+    /// Idempotent: if the installed plist already points at this app's helper
+    /// and the job is loaded, nothing happens — so a running agent (and any
+    /// transfer in flight) is left alone. `force` reinstalls unconditionally.
+    func registerAgent(force: Bool = false) async {
+        let data: Data
+        do {
+            data = try launchAgentPlist()
+        } catch {
+            log.error("encoding LaunchAgent plist failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        let upToDate = (try? Data(contentsOf: launchAgentURL)) == data
+        let loaded = await Self.launchctl(["print", launchdTarget]).0 == 0
+        if upToDate && loaded && !force {
+            await refreshAgentStatus()
+            return
+        }
         do {
             try FileManager.default.createDirectory(
                 at: launchAgentURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true)
-            let data = try PropertyListSerialization.data(
-                fromPropertyList: plist, format: .xml, options: 0)
             try data.write(to: launchAgentURL)
         } catch {
             log.error("writing LaunchAgent plist failed: \(error.localizedDescription, privacy: .public)")
-            refreshAgentStatus()
+            await refreshAgentStatus()
             return
         }
-        let domain = "gui/\(getuid())"
-        _ = Self.launchctl(["bootout", "\(domain)/\(MtpAgentConfig.agentLabel)"])
-        let (code, out) = Self.launchctl(["bootstrap", domain, launchAgentURL.path])
+        // Only now (plist changed, e.g. the app moved, or forced) restart the job.
+        if loaded { _ = await Self.launchctl(["bootout", launchdTarget]) }
+        let (code, out) = await Self.launchctl(["bootstrap", "gui/\(getuid())", launchAgentURL.path])
         log.info("agent bootstrap exit=\(code) \(out, privacy: .public)")
-        refreshAgentStatus()
+        await refreshAgentStatus()
     }
 
-    func unregisterAgent() {
-        _ = Self.launchctl(["bootout", "gui/\(getuid())/\(MtpAgentConfig.agentLabel)"])
+    func unregisterAgent() async {
+        _ = await Self.launchctl(["bootout", launchdTarget])
         try? FileManager.default.removeItem(at: launchAgentURL)
-        refreshAgentStatus()
+        await refreshAgentStatus()
     }
 
-    func refreshAgentStatus() {
-        let (code, _) = Self.launchctl(["print", "gui/\(getuid())/\(MtpAgentConfig.agentLabel)"])
+    func refreshAgentStatus() async {
+        let (code, _) = await Self.launchctl(["print", launchdTarget])
         let installed = FileManager.default.fileExists(atPath: launchAgentURL.path)
-        let text = code == 0 ? "Agent: registered ✓"
+        agentStatus = code == 0 ? "Agent: registered ✓"
             : (installed ? "Agent: installed (not loaded)" : "Agent: not registered")
-        Task { @MainActor in self.agentStatus = text }
     }
 
-    /// Run /bin/launchctl and return (exitCode, combinedOutput).
-    @discardableResult
-    private static func launchctl(_ args: [String]) -> (Int32, String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
+    /// Run /bin/launchctl off the main actor and return (exitCode, combinedOutput).
+    private nonisolated static func launchctl(_ args: [String]) async -> (Int32, String) {
+        await Task.detached {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            p.arguments = args
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = pipe
+            do {
+                try p.run()
+                // Drain before waiting: a full pipe would block launchctl forever.
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+            } catch {
+                return (-1, "launchctl failed: \(error.localizedDescription)")
+            }
+        }.value
+    }
+
+    /// Make sure the helper and the domain exist. Safe to call on every launch:
+    /// an existing domain (and its downloaded files / pending uploads) is kept.
+    func register() async {
+        await registerAgent()
         do {
-            try p.run()
-            p.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+            let domains = try await NSFileProviderManager.domains()
+            if domains.contains(where: { $0.identifier == FP.domainIdentifier }) {
+                status = "Registered ✓"
+                return
+            }
+            log.info("register: adding domain")
+            try await NSFileProviderManager.add(FP.domain)
+            status = "Registered ✓"
         } catch {
-            return (-1, "launchctl failed: \(error.localizedDescription)")
+            log.error("register failed: \(error.localizedDescription, privacy: .public)")
+            status = "Register failed: \(error.localizedDescription)"
         }
     }
 
-    func register() {
-        // Make sure the helper is registered before we add the domain.
-        registerAgent()
-
-        let domain = NSFileProviderDomain(
-            identifier: FP.domainIdentifier,
-            displayName: FP.domainDisplayName
-        )
-        // Purge ALL domains for this provider first (clears any stale V2/non-replicated
-        // state left over from earlier registrations), then add the replicated domain.
-        log.info("register: removeAllDomains")
-        NSFileProviderManager.removeAllDomains { removeErr in
-            log.info("register: removeAllDomains err=\(String(describing: removeErr), privacy: .public)")
-            NSFileProviderManager.add(domain) { [weak self] error in
-                log.info("register: add result err=\(String(describing: error), privacy: .public)")
-                Task { @MainActor in
-                    if let error {
-                        self?.status = "Register failed: \(error.localizedDescription)"
-                    } else {
-                        self?.status = "Registered ✓"
-                        self?.refreshStatus()
-                    }
-                }
-            }
+    /// Troubleshooting: purge every domain of this provider (including stale
+    /// state from older registrations), reinstall the helper and re-add.
+    func reset() async {
+        do {
+            try await NSFileProviderManager.removeAllDomains()
+        } catch {
+            log.error("removeAllDomains failed: \(error.localizedDescription, privacy: .public)")
         }
+        await registerAgent(force: true)
+        await register()
     }
 
-    func remove() {
-        let domain = NSFileProviderDomain(
-            identifier: FP.domainIdentifier,
-            displayName: FP.domainDisplayName
-        )
-        NSFileProviderManager.remove(domain) { [weak self] error in
-            Task { @MainActor in
-                self?.status = error == nil
-                    ? "Removed"
-                    : "Remove failed: \(error!.localizedDescription)"
-            }
+    func remove() async {
+        do {
+            try await NSFileProviderManager.remove(FP.domain)
+            status = "Removed"
+        } catch {
+            status = "Remove failed: \(error.localizedDescription)"
         }
     }
 
     /// Ask the system to re-enumerate so content changes show up.
-    func signalChange() {
-        guard let mgr = NSFileProviderManager(for: NSFileProviderDomain(
-            identifier: FP.domainIdentifier,
-            displayName: FP.domainDisplayName
-        )) else {
+    func signalChange() async {
+        guard let mgr = NSFileProviderManager(for: FP.domain) else {
             status = "No manager for domain"
             return
         }
-        mgr.signalEnumerator(for: .workingSet) { _ in }
-        mgr.signalEnumerator(for: .rootContainer) { [weak self] error in
-            Task { @MainActor in
-                self?.status = error == nil ? "Signalled re-enumeration" : "Signal failed: \(error!.localizedDescription)"
-            }
+        do {
+            try await mgr.signalEnumerator(for: .workingSet)
+            status = "Signalled re-enumeration"
+        } catch {
+            status = "Signal failed: \(error.localizedDescription)"
         }
     }
 
     func refreshStatus() {
-        NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, _ in
-            let found = domains.contains { $0.identifier == FP.domainIdentifier }
-            Task { @MainActor in
-                if found { self?.status = "Registered ✓" }
-                let base = ("~/Library/CloudStorage" as NSString).expandingTildeInPath
-                self?.cloudStoragePath = base
+        Task {
+            let domains = (try? await NSFileProviderManager.domains()) ?? []
+            if domains.contains(where: { $0.identifier == FP.domainIdentifier }) {
+                status = "Registered ✓"
             }
         }
     }
@@ -201,14 +217,18 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
-                Button("Register") { controller.register() }
-                Button("Remove domain") { controller.remove() }
-                Button("Signal re-enumerate") { controller.signalChange() }
+                Button("Register") { Task { await controller.register() } }
+                Button("Reset domain") { Task { await controller.reset() } }
+                Button("Remove domain") { Task { await controller.remove() } }
+                Button("Signal re-enumerate") { Task { await controller.signalChange() } }
             }
             HStack(spacing: 12) {
-                Button("Register agent") { controller.registerAgent() }
-                Button("Unregister agent") { controller.unregisterAgent() }
-                Button("Refresh") { controller.refreshStatus(); controller.refreshAgentStatus() }
+                Button("Reinstall agent") { Task { await controller.registerAgent(force: true) } }
+                Button("Unregister agent") { Task { await controller.unregisterAgent() } }
+                Button("Refresh") {
+                    controller.refreshStatus()
+                    Task { await controller.refreshAgentStatus() }
+                }
             }
 
             Divider()
