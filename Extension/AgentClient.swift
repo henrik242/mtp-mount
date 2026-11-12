@@ -52,6 +52,15 @@ final class AgentClient {
         }
     }
 
+    /// Send an XPC message with `progress` current: NSXPCConnection then gives
+    /// the agent a child progress for that call, so its byte counts flow back
+    /// here and cancelling `progress` cancels the agent's transfer.
+    private static func reporting(to progress: Progress, _ send: () -> Void) {
+        progress.becomeCurrent(withPendingUnitCount: progress.totalUnitCount)
+        send()
+        progress.resignCurrent()
+    }
+
     // MARK: - Calls
 
     func status(completion: @escaping (Result<AgentStatus, Error>) -> Void) {
@@ -76,7 +85,10 @@ final class AgentClient {
     /// Download `objectID` into a fresh file in `directory` (owned by the
     /// extension) and return its URL. The extension passes the open fd to the
     /// agent over XPC. The file is removed on any failure.
-    func fetch(objectID: UInt32, into directory: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    /// `progress` receives byte progress from the agent, and cancelling it
+    /// stops the transfer.
+    func fetch(objectID: UInt32, into directory: URL, progress: Progress,
+               completion: @escaping (Result<URL, Error>) -> Void) {
         let dest = directory.appendingPathComponent("mtp-\(objectID)-\(UUID().uuidString)")
         guard FileManager.default.createFile(atPath: dest.path, contents: nil),
               let handle = try? FileHandle(forWritingTo: dest) else {
@@ -88,17 +100,20 @@ final class AgentClient {
             try? FileManager.default.removeItem(at: dest)
             completion(.failure(error))
         }
-        proxy(fail)?.fetch(objectID: objectID, into: handle) { error in
-            if let error { fail(FileProviderErrors.map(error)); return }
-            try? handle.close()
-            completion(.success(dest))
+        guard let agent = proxy(fail) else { return }
+        Self.reporting(to: progress) {
+            agent.fetch(objectID: objectID, into: handle) { error in
+                if let error { fail(FileProviderErrors.map(error)); return }
+                try? handle.close()
+                completion(.success(dest))
+            }
         }
     }
 
     // MARK: - Writes
 
     /// Upload a local file as a new object under `parent`. Returns the new MTP id.
-    func upload(parent: UInt32, name: String, source: URL,
+    func upload(parent: UInt32, name: String, source: URL, progress: Progress,
                 completion: @escaping (Result<UInt32, Error>) -> Void) {
         let size = ((try? FileManager.default.attributesOfItem(atPath: source.path))?[.size] as? UInt64) ?? 0
         guard let handle = try? FileHandle(forReadingFrom: source) else {
@@ -109,10 +124,13 @@ final class AgentClient {
             try? handle.close()
             completion(.failure(error))
         }
-        proxy(fail)?.upload(parent: parent, name: name, size: size, from: handle) { newID, error in
-            if let error { fail(FileProviderErrors.map(error)); return }
-            try? handle.close()
-            completion(.success(newID))
+        guard let agent = proxy(fail) else { return }
+        Self.reporting(to: progress) {
+            agent.upload(parent: parent, name: name, size: size, from: handle) { newID, error in
+                if let error { fail(FileProviderErrors.map(error)); return }
+                try? handle.close()
+                completion(.success(newID))
+            }
         }
     }
 

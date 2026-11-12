@@ -13,7 +13,15 @@ enum MtpID {
     /// identifier isn't a browsable MTP container.
     static func listParent(for id: NSFileProviderItemIdentifier) -> UInt32? {
         if id == .rootContainer { return MtpAgentConfig.rootParent }
-        return UInt32(id.rawValue)
+        return objectID(for: id)
+    }
+
+    /// The MTP object id an item identifier names (nil for the root and for
+    /// system containers such as the Trash or the working set).
+    static func objectID(for id: NSFileProviderItemIdentifier) -> UInt32? {
+        guard id != .rootContainer, let value = UInt32(id.rawValue),
+              value != MtpAgentConfig.rootParent, value != storageRootSentinel else { return nil }
+        return value
     }
 
     /// Identifier for an MTP object id.
