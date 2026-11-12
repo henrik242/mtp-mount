@@ -18,6 +18,12 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 - [ ] Open Image Capture / Android File Transfer / a vendor sync app first, then plug in: app shows "in use by another app" with the hint; quitting that app and replugging recovers
 - [ ] Sleep the Mac with the device attached, wake: first browse works (or recovers on the next try)
 
+## Changes made on the device
+- [ ] Phone connected and a folder open in Finder: take a photo → it appears in `DCIM/Camera` within a few seconds, without replugging
+- [ ] Delete a file on the phone → it disappears from Finder
+- [ ] Insert/remove an SD card (if the device has one) → Finder re-enumerates
+- [ ] Devices that send no MTP events: still work; changes show after a reconnect (log says "device events unavailable")
+
 ## Transfers
 - [ ] Copy a file off the device: bytes identical to a direct libmtp download (`mtp-getfile`)
 - [ ] Copy a >100 MB file to and from the device: Finder shows a progress bar

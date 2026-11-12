@@ -94,7 +94,11 @@ extension passes over XPC (uploads work the same way in reverse), with byte
 progress and cancellation carried by `NSProgress` across the connection.
 
 MTP object handles are only valid within one USB session, so the File Provider
-sync anchor is the device's serial plus a session id. The helper watches USB
+sync anchor is the device's serial plus a session id, plus a position in a
+journal of the MTP events the device sends (object added/removed), which the
+helper polls once a second. Changes made on the device while it's connected (a
+new photo on a phone) are reported to Finder item by item; a new session means
+a full re-enumeration. The helper watches USB
 hotplug (IOKit) and, whenever its session opens or is lost, signals the
 system, which then re-enumerates. Operations that change an existing item
 first check it still matches the version Finder based the change on.

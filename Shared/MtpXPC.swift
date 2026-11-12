@@ -49,8 +49,23 @@ struct AgentStatus: Codable, Equatable {
     /// whenever the device is (re)opened, so object handles cached under an
     /// older value may no longer refer to the same objects.
     var sessionID: String?
+    /// Position in the session's change journal (see `ChangeSet`).
+    var changeSeq: UInt64 = 0
     var failure: MtpFailure?
     var message: String?
+}
+
+/// Changes the device reported (MTP events) since a journal position, JSON
+/// over XPC. `expired` means they can't be described item by item (journal
+/// overflowed, a storage came or went, or the session changed): the caller
+/// must re-enumerate.
+struct ChangeSet: Codable, Equatable {
+    var serial: String?
+    var sessionID: String
+    var latestSeq: UInt64
+    var expired: Bool
+    var updated: [MtpEntry]
+    var deleted: [UInt32]
 }
 
 /// Shared configuration + XPC contract between the non-sandboxed libmtp agent
@@ -112,6 +127,10 @@ extension NSError {
     func status(reply: @escaping (_ json: Data?) -> Void)
     /// JSON-encoded `[MtpEntry]` for the children of `parent` (`rootParent` = top).
     func list(parent: UInt32, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
+    /// JSON-encoded `ChangeSet`: what the device reported since journal
+    /// position `seq` of the current session. Fails with `.noDevice` when no
+    /// device is connected.
+    func changes(since seq: UInt64, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
     /// JSON-encoded `MtpEntry` for a single object; fails with `.noSuchObject`
     /// if it no longer exists.
     func item(objectID: UInt32, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
@@ -143,14 +162,39 @@ extension NSError {
               reply: @escaping (_ error: NSError?) -> Void)
 }
 
-/// File Provider sync anchors derived from the agent's device session: the
-/// device's serial plus the session id, so a replug, a different device or an
-/// agent restart all yield a new anchor (and a full re-enumeration).
-enum SyncAnchor {
+/// File Provider sync anchor: the device serial and session id (a replug, a
+/// different device or an agent restart means a full re-enumeration) plus the
+/// position in that session's change journal (changes since then are reported
+/// item by item).
+struct SyncAnchor: Codable, Equatable {
+    var serial: String?
+    var sessionID: String
+    var seq: UInt64
+
+    static let offline = Data("offline".utf8)
+
+    /// The anchor for the agent's current state (`offline` when no device).
     static func make(_ status: AgentStatus?) -> Data {
-        guard let status, status.connected, let session = status.sessionID else {
-            return Data("offline".utf8)
-        }
-        return Data("\(status.serial ?? "unknown")|\(session)".utf8)
+        guard let status, status.connected, let session = status.sessionID else { return offline }
+        return SyncAnchor(serial: status.serial, sessionID: session, seq: status.changeSeq).data
+    }
+
+    var data: Data { (try? JSONEncoder().encode(self)) ?? SyncAnchor.offline }
+
+    /// Decode an anchor; nil for `offline` or anything unrecognised.
+    init?(_ data: Data) {
+        guard let anchor = try? JSONDecoder().decode(SyncAnchor.self, from: data) else { return nil }
+        self = anchor
+    }
+
+    init(serial: String?, sessionID: String, seq: UInt64) {
+        self.serial = serial
+        self.sessionID = sessionID
+        self.seq = seq
+    }
+
+    /// Whether a change set continues this anchor's session.
+    func continues(_ changes: ChangeSet) -> Bool {
+        !changes.expired && changes.sessionID == sessionID && changes.serial == serial && changes.latestSeq >= seq
     }
 }

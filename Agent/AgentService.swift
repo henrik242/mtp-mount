@@ -21,8 +21,21 @@ final class AgentService: NSObject, MtpAgentXPC {
     private var epoch = 0
     private var lastAbsent: (at: Date, error: MtpError)?
 
-    /// Called on the device queue whenever a new session opens or one is lost.
-    var onSessionChange: ((AgentStatus) -> Void)?
+    /// Journal of device-reported changes in the current session.
+    private enum Change { case updated(UInt32), deleted(UInt32), rescan }
+    static let journalLimit = 5_000
+    private var journal: [(seq: UInt64, change: Change)] = []
+    private var changeSeq: UInt64 = 0
+    /// Positions at or below this are no longer covered by the journal.
+    private var journalFloor: UInt64 = 0
+    private var eventTimer: DispatchSourceTimer?
+
+    /// Called on the device queue whenever a session opens or is lost, or the
+    /// device reported changes: the File Provider should be signalled.
+    var onChange: ((AgentStatus) -> Void)?
+    /// Called when the device couldn't be released safely; the process should
+    /// exit so launchd can start a fresh agent that can open it again.
+    var onUnsafeClose: (() -> Void)?
 
     init(device: MtpDevice,
          queue: DispatchQueue = DispatchQueue(label: "no.synth.mtpmount.agent.mtp"),
@@ -41,6 +54,7 @@ final class AgentService: NSObject, MtpAgentXPC {
                     deviceName: device.isOpen ? device.deviceName() : nil,
                     serial: device.isOpen ? device.serialNumber() : nil,
                     sessionID: sessionID,
+                    changeSeq: changeSeq,
                     failure: failure?.kind,
                     message: failure?.message)
     }
@@ -59,16 +73,101 @@ final class AgentService: NSObject, MtpAgentXPC {
         }
         lastAbsent = nil
         epoch += 1
+        journal = []
+        changeSeq = 0
+        journalFloor = 0
         log.info("opened device: \(self.device.deviceName() ?? "?", privacy: .public) session \(self.sessionID ?? "", privacy: .public)")
-        onSessionChange?(currentStatus())
+        onChange?(currentStatus())
     }
 
     /// Close the session after a transport failure; the next call reopens.
     private func dropSession(after error: MtpError) {
         guard device.isOpen else { return }
         log.error("dropping USB session: \(error.message, privacy: .public)")
-        device.close()
-        onSessionChange?(currentStatus(failure: error))
+        let released = device.close()
+        onChange?(currentStatus(failure: error))
+        if !released { onUnsafeClose?() }
+    }
+
+    // MARK: - Device events
+
+    /// Poll the device for events every `interval` seconds on the device queue.
+    func startEventPolling(interval: TimeInterval = 1) {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(200))
+        timer.setEventHandler { [weak self] in self?.pollDeviceEventsOnQueue() }
+        timer.resume()
+        eventTimer = timer
+    }
+
+    /// One polling step (tests call this directly). Runs on the device queue.
+    func pollDeviceEvents(completion: (() -> Void)? = nil) {
+        queue.async {
+            self.pollDeviceEventsOnQueue()
+            completion?()
+        }
+    }
+
+    private func pollDeviceEventsOnQueue() {
+        guard device.isOpen else { return }
+        let events = device.pollEvents()
+        guard !events.isEmpty else { return }
+        var changed = false
+        for event in events {
+            switch event {
+            case .objectAdded(let id): record(.updated(id)); changed = true
+            case .objectRemoved(let id): record(.deleted(id)); changed = true
+            case .storageChanged: record(.rescan); changed = true
+            case .linkLost:
+                do { try device.ping() } catch { dropSession(after: MtpError(error)); return }
+            }
+        }
+        if changed {
+            log.info("device reported changes; journal at \(self.changeSeq)")
+            onChange?(currentStatus())
+        }
+    }
+
+    private func record(_ change: Change) {
+        changeSeq += 1
+        journal.append((changeSeq, change))
+        if journal.count > Self.journalLimit {
+            let dropped = journal.count - Self.journalLimit
+            journalFloor = journal[dropped - 1].seq
+            journal.removeFirst(dropped)
+        }
+    }
+
+    /// Describe the journal after `seq` as updated entries and deleted ids.
+    private func changeSet(since seq: UInt64) throws -> ChangeSet {
+        guard let session = sessionID else { throw MtpError(.noDevice, "No MTP device connected.") }
+        let entries = journal.filter { $0.seq > seq }
+        var result = ChangeSet(serial: device.serialNumber(), sessionID: session, latestSeq: changeSeq,
+                               expired: false, updated: [], deleted: [])
+        if seq < journalFloor || seq > changeSeq || entries.contains(where: {
+            if case .rescan = $0.change { return true } else { return false }
+        }) {
+            result.expired = true
+            return result
+        }
+        // Last word per object wins; re-read added objects (they may be gone again).
+        var latest: [UInt32: Bool] = [:]   // id → exists
+        var order: [UInt32] = []
+        for (_, change) in entries {
+            switch change {
+            case .updated(let id): if latest[id] == nil { order.append(id) }; latest[id] = true
+            case .deleted(let id): if latest[id] == nil { order.append(id) }; latest[id] = false
+            case .rescan: break
+            }
+        }
+        for id in order {
+            if latest[id] == true, let entry = try device.metadata(id: id) {
+                result.updated.append(entry)
+            } else {
+                result.deleted.append(id)
+            }
+        }
+        return result
     }
 
     /// Notification that USB devices came or went (from the hotplug monitor).
@@ -175,6 +274,21 @@ final class AgentService: NSObject, MtpAgentXPC {
                 do { try self.ensureOpen() } catch { failure = MtpError(error) }
             }
             reply(try? Self.encode(self.currentStatus(failure: self.device.isOpen ? nil : failure)))
+        }
+    }
+
+    func changes(since seq: UInt64, reply: @escaping (Data?, NSError?) -> Void) {
+        queue.async {
+            // Don't open a device just to answer this: a closed session means
+            // the anchor's session is over anyway.
+            do {
+                self.pollDeviceEventsOnQueue()
+                reply(try Self.encode(try self.changeSet(since: seq)), nil)
+            } catch {
+                let e = MtpError(error)
+                if e.kind.isTransport { self.dropSession(after: e) }
+                reply(nil, e.nsError)
+            }
         }
     }
 
