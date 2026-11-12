@@ -16,26 +16,26 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] 1. XPC: agent only accepts connections from our team-signed extension/app; client pins the agent's signature
 - [ ] 2. Device identity: agent records the device serial; sync anchor = serial + connection epoch; destructive ops verify `baseVersion` against the device first, so a stale object handle can't hit an unrelated file
 - [ ] 3. Change tracking: real sync anchor; `enumerateChanges` returns `.syncAnchorExpired` when the device/epoch changes; USB hotplug (IOKit) in the agent bumps the epoch and signals the working set
-- [ ] 4. libmtp error stack is read after every call and cleared (no silent "empty folder" / "no such item" on I/O errors, no unbounded growth)
+- [x] 4. libmtp error stack is read after every call and cleared (no silent "empty folder" / "no such item" on I/O errors, no unbounded growth)
 
 ## High
 - [x] 5. App launch no longer wipes the domain (`removeAllDomains`) or boots out a running agent; explicit "Reset" instead
-- [ ] 6. Agent drops the USB session only on transport errors, not on logical refusals
-- [ ] 7. Structured errors over XPC, mapped to `NSFileProviderError` (`serverUnreachable`, `noSuchItem`, `filenameCollision`, `insufficientQuota`, `directoryNotEmpty`, …)
+- [x] 6. Agent drops the USB session only on transport errors, not on logical refusals
+- [x] 7. Structured errors over XPC, mapped to `NSFileProviderError` (`serverUnreachable`, `noSuchItem`, `filenameCollision`, `insufficientQuota`, `directoryNotEmpty`, …)
 - [ ] 8. `modifyItem`: content edits / unknown parents (Trash) are rejected instead of silently "succeeding"; `baseVersion` checked
 - [ ] 9. `createItem` returns the device's real metadata; honours `.mayAlreadyExist`; refuses duplicate names
 - [ ] 10. dylib/OS mismatch: deployment target = runner OS; bundle script verifies arm64 + `minos`
 - [ ] 11. "Device in use by another app" detected and reported clearly (agent, Finder error, app UI, README)
 
 ## Medium
-- [ ] `createFolder` passes a `strdup` copy to libmtp (no UB)
+- [x] `createFolder` passes a `strdup` copy to libmtp (no UB)
 - [ ] Byte progress + cancellation for uploads/downloads (libmtp callbacks ↔ `Progress` over XPC); partial uploads are cleaned up
-- [ ] Folder delete honours `.recursive`; non-recursive delete of a non-empty folder → `.directoryNotEmpty`
-- [ ] Move checks the MoveObject capability and returns "unsupported" instead of resetting the session
-- [ ] Defensive parent filtering when listing (devices that ignore the parent filter at root)
-- [ ] Detection of an absent device is rate-limited (no USB probe storm)
+- [x] Folder delete honours `.recursive`; non-recursive delete of a non-empty folder → `.directoryNotEmpty`
+- [x] Move checks the MoveObject capability and returns "unsupported" instead of resetting the session
+- [x] Defensive parent filtering when listing (devices that ignore the parent filter at root)
+- [x] Detection of an absent device is rate-limited (no USB probe storm)
 - [x] `launchctl` runs off the main actor and reads the pipe before waiting
-- [ ] AgentClient: interruption keeps the connection; invalidation only clears the matching connection; temp file removed on XPC error; temp files go in the domain's temporary directory
+- [x] AgentClient: interruption keeps the connection; invalidation only clears the matching connection; temp file removed on XPC error; temp files go in the domain's temporary directory
 - [ ] LaunchAgent plist is rewritten + re-bootstrapped when the app has moved; warn when not run from /Applications
 - [ ] `disable-library-validation` only in Debug (release agent signed without it)
 - [ ] Scripts: `.appex` lookup can't silently exit under `pipefail`; libusb resolved robustly; `make-dmg.sh` parses flags properly, uses `ditto`, fails on Gatekeeper rejection when notarizing
@@ -50,7 +50,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [ ] Dead code removed (`download(id:to:)`, `cloudStoragePath`, duplicate app-group + `rootParent` constants)
 - [ ] Stale comments ("read-only phase", app-group drop, `status` doc) fixed
 - [ ] `project.yml` duplicates removed; stale SMAppService comment corrected
-- [ ] Agent boilerplate collapsed into one helper
+- [x] Agent boilerplate collapsed into one helper
 - [ ] Hard-coded "Garmin Edge" root name uses `FP.domainDisplayName`; team ID / subsystem in one place
 - [x] Force-unwraps of `error!` removed
 - [ ] *deferred* — pin GitHub Actions by SHA
