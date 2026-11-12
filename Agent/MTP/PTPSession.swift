@@ -216,7 +216,7 @@ final class NativeMtpDevice: MtpDevice {
                 try session.transact(PTP.Op.openSession, [1])
             } catch let e as PTPResponseError where e.code == PTP.Response.sessionAlreadyOpen {
                 // A previous owner left it open: start over.
-                try? session.transact(PTP.Op.closeSession)
+                _ = try? session.transact(PTP.Op.closeSession)
                 try session.transact(PTP.Op.openSession, [1])
             }
             let info = try PTPDeviceInfo(decoding: session.transactIn(PTP.Op.getDeviceInfo).data)
@@ -251,7 +251,7 @@ final class NativeMtpDevice: MtpDevice {
             self.name = deviceName
             self.storageID = first.0
         } catch {
-            try? session.transact(PTP.Op.closeSession)
+            _ = try? session.transact(PTP.Op.closeSession)
             transport.close()
             throw Self.map(error, "Opening the device")
         }
@@ -261,7 +261,7 @@ final class NativeMtpDevice: MtpDevice {
     func close() -> Bool {
         guard !closed else { return true }
         closed = true
-        try? session.transact(PTP.Op.closeSession)
+        _ = try? session.transact(PTP.Op.closeSession)
         session.transport.close()
         return true   // IOUSBHost aborts pending I/O; nothing can dangle
     }
@@ -396,7 +396,7 @@ final class NativeMtpDevice: MtpDevice {
             } catch {
                 // Don't leave a truncated object behind (unless the link is gone).
                 if handle != 0, (error as? MtpError)?.kind != .disconnected {
-                    try? session.transact(PTP.Op.deleteObject, [handle, 0])
+                    _ = try? session.transact(PTP.Op.deleteObject, [handle, 0])
                 }
                 throw error
             }
