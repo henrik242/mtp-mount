@@ -46,4 +46,22 @@ enum MtpAgentConfig {
     func fetch(objectID: UInt32,
                into destination: FileHandle,
                reply: @escaping (_ errorMessage: String?) -> Void)
+
+    // MARK: Writes
+
+    /// Upload `size` bytes read from `source` as a new file `name` under `parent`.
+    /// Replies with the new object id (0 on failure) and an optional error message.
+    func upload(parent: UInt32, name: String, size: UInt64, from source: FileHandle,
+                reply: @escaping (_ newObjectID: UInt32, _ errorMessage: String?) -> Void)
+    /// Create a folder `name` under `parent`. Replies with the new folder id.
+    func createFolder(parent: UInt32, name: String,
+                      reply: @escaping (_ newObjectID: UInt32, _ errorMessage: String?) -> Void)
+    /// Delete an object (file or folder) by id.
+    func delete(objectID: UInt32, reply: @escaping (_ errorMessage: String?) -> Void)
+    /// Rename an object by id.
+    func rename(objectID: UInt32, to newName: String,
+                reply: @escaping (_ errorMessage: String?) -> Void)
+    /// Move an object to a new parent folder.
+    func move(objectID: UInt32, toParent newParent: UInt32,
+              reply: @escaping (_ errorMessage: String?) -> Void)
 }

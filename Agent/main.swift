@@ -81,6 +81,78 @@ final class AgentService: NSObject, MtpAgentXPC {
             }
         }
     }
+
+    // MARK: - Writes
+
+    func upload(parent: UInt32, name: String, size: UInt64, from source: FileHandle,
+                reply: @escaping (UInt32, String?) -> Void) {
+        queue.async {
+            do {
+                try self.ensureOpen()
+                let id = try self.session.upload(fromFileDescriptor: source.fileDescriptor,
+                                                 parent: parent, name: name, size: size)
+                try? source.close()
+                reply(id, nil)
+            } catch {
+                try? source.close()
+                self.dropSession()
+                log.error("upload(\(name)) failed: \(String(describing: error), privacy: .public)")
+                reply(0, "\(error)")
+            }
+        }
+    }
+
+    func createFolder(parent: UInt32, name: String,
+                      reply: @escaping (UInt32, String?) -> Void) {
+        queue.async {
+            do {
+                try self.ensureOpen()
+                reply(try self.session.createFolder(name: name, parent: parent), nil)
+            } catch {
+                self.dropSession()
+                reply(0, "\(error)")
+            }
+        }
+    }
+
+    func delete(objectID: UInt32, reply: @escaping (String?) -> Void) {
+        queue.async {
+            do {
+                try self.ensureOpen()
+                try self.session.delete(id: objectID)
+                reply(nil)
+            } catch {
+                self.dropSession()
+                reply("\(error)")
+            }
+        }
+    }
+
+    func rename(objectID: UInt32, to newName: String, reply: @escaping (String?) -> Void) {
+        queue.async {
+            do {
+                try self.ensureOpen()
+                try self.session.rename(id: objectID, to: newName)
+                reply(nil)
+            } catch {
+                self.dropSession()
+                reply("\(error)")
+            }
+        }
+    }
+
+    func move(objectID: UInt32, toParent newParent: UInt32, reply: @escaping (String?) -> Void) {
+        queue.async {
+            do {
+                try self.ensureOpen()
+                try self.session.move(id: objectID, toParent: newParent)
+                reply(nil)
+            } catch {
+                self.dropSession()
+                reply("\(error)")
+            }
+        }
+    }
 }
 
 final class ListenerDelegate: NSObject, NSXPCListenerDelegate {

@@ -5,14 +5,18 @@ enum MtpError: Error, CustomStringConvertible {
     case noDevice
     case openFailed
     case notConnected
+    case noSuchObject
     case downloadFailed(Int32)
+    case writeFailed(Int32)
 
     var description: String {
         switch self {
         case .noDevice:            return "No MTP device detected on USB."
         case .openFailed:          return "Found a raw device but failed to open an MTP session."
         case .notConnected:        return "No open MTP session."
+        case .noSuchObject:        return "No such object on the device."
         case .downloadFailed(let c): return "File download failed (libmtp code \(c))."
+        case .writeFailed(let c):  return "Write operation failed (libmtp code \(c))."
         }
     }
 }
@@ -148,5 +152,59 @@ final class MtpSession {
         guard let dev = device else { throw MtpError.notConnected }
         let rc = LIBMTP_Get_File_To_File_Descriptor(dev, id, fd, nil, nil)
         if rc != 0 { throw MtpError.downloadFailed(rc) }
+    }
+
+    // MARK: - Writes
+
+    /// Upload the bytes of an open (read) file descriptor as a new file named
+    /// `name` under `parent`, with `size` bytes. Returns the new object id.
+    func upload(fromFileDescriptor fd: Int32, parent: UInt32,
+                name: String, size: UInt64) throws -> UInt32 {
+        guard let dev = device else { throw MtpError.notConnected }
+        guard let meta = LIBMTP_new_file_t() else { throw MtpError.writeFailed(-1) }
+        defer { LIBMTP_destroy_file_t(meta) }   // frees filename too
+        meta.pointee.parent_id = (parent == Self.rootParent) ? 0 : parent
+        meta.pointee.storage_id = storageID
+        meta.pointee.filesize = size
+        meta.pointee.filetype = LIBMTP_FILETYPE_UNKNOWN
+        meta.pointee.filename = strdup(name)
+        let rc = LIBMTP_Send_File_From_File_Descriptor(dev, fd, meta, nil, nil)
+        if rc != 0 { throw MtpError.writeFailed(rc) }
+        return meta.pointee.item_id
+    }
+
+    /// Create a folder named `name` under `parent`. Returns the new folder id.
+    func createFolder(name: String, parent: UInt32) throws -> UInt32 {
+        guard let dev = device else { throw MtpError.notConnected }
+        let parentArg = (parent == Self.rootParent) ? UInt32(0) : parent
+        let id = name.withCString { cname -> UInt32 in
+            LIBMTP_Create_Folder(dev, UnsafeMutablePointer(mutating: cname), parentArg, storageID)
+        }
+        if id == 0 { throw MtpError.writeFailed(-1) }
+        return id
+    }
+
+    /// Delete an object (file or folder) by id.
+    func delete(id: UInt32) throws {
+        guard let dev = device else { throw MtpError.notConnected }
+        let rc = LIBMTP_Delete_Object(dev, id)
+        if rc != 0 { throw MtpError.writeFailed(rc) }
+    }
+
+    /// Rename an object (file or folder) by id.
+    func rename(id: UInt32, to newName: String) throws {
+        guard let dev = device else { throw MtpError.notConnected }
+        guard let f = LIBMTP_Get_Filemetadata(dev, id) else { throw MtpError.noSuchObject }
+        defer { LIBMTP_destroy_file_t(f) }
+        let rc = newName.withCString { LIBMTP_Set_File_Name(dev, f, $0) }
+        if rc != 0 { throw MtpError.writeFailed(rc) }
+    }
+
+    /// Move an object to a new parent folder.
+    func move(id: UInt32, toParent parent: UInt32) throws {
+        guard let dev = device else { throw MtpError.notConnected }
+        let parentArg = (parent == Self.rootParent) ? UInt32(0) : parent
+        let rc = LIBMTP_Move_Object(dev, id, storageID, parentArg)
+        if rc != 0 { throw MtpError.writeFailed(rc) }
     }
 }

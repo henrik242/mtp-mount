@@ -41,8 +41,13 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
     }
 
     var capabilities: NSFileProviderItemCapabilities {
-        // Read-only (Phase 1). Writes are a later phase.
-        isFolder ? [.allowsReading, .allowsContentEnumerating] : [.allowsReading]
+        // Read + add/delete/rename/move. We don't advertise in-place content
+        // rewrites (MTP has no partial write; edits would change the object id).
+        if isFolder {
+            return [.allowsReading, .allowsContentEnumerating,
+                    .allowsAddingSubItems, .allowsDeleting, .allowsRenaming, .allowsReparenting]
+        }
+        return [.allowsReading, .allowsDeleting, .allowsRenaming, .allowsReparenting]
     }
 
     var documentSize: NSNumber? {
