@@ -14,7 +14,7 @@
 #   LIBMTP_DYLIB    Path to libmtp.9.dylib. Default: $(brew --prefix libmtp)/lib/libmtp.9.dylib
 #   LIBUSB_DYLIB    Path to libusb-1.0.0.dylib. Default: what libmtp links, or
 #                   $(brew --prefix libusb)/lib/libusb-1.0.0.dylib
-#   AGENT_NAME      Helper executable name. Default: garmin-mtp-agent
+#   AGENT_NAME      Helper executable name. Default: mtpmount-agent
 #
 # --timestamp adds a secure timestamp (needed for notarization; requires network).
 set -euo pipefail
@@ -44,7 +44,7 @@ fi
 
 LIBMTP_DYLIB="${LIBMTP_DYLIB:-$(brew_prefix libmtp)/lib/libmtp.9.dylib}"
 [ -f "$LIBMTP_DYLIB" ] || die "libmtp not found at $LIBMTP_DYLIB (set LIBMTP_DYLIB)"
-AGENT_NAME="${AGENT_NAME:-garmin-mtp-agent}"
+AGENT_NAME="${AGENT_NAME:-mtpmount-agent}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FW="$APP/Contents/Frameworks"

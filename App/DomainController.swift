@@ -41,7 +41,7 @@ final class DomainController: ObservableObject {
 
     /// Path to the embedded libmtp helper executable.
     private var helperURL: URL {
-        Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/garmin-mtp-agent")
+        Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/\(MtpAgentConfig.agentExecutable)")
     }
 
     /// The per-user LaunchAgent plist we install for the helper.
@@ -142,6 +142,12 @@ final class DomainController: ObservableObject {
     func register() async {
         await registerAgent()
         do {
+            // Drop domains from older versions (e.g. the former device-specific
+            // "GarminEdge" domain) so only the current one shows in Finder.
+            for stale in try await NSFileProviderManager.domains() where stale.identifier != FP.domainIdentifier {
+                log.info("register: removing old domain \(stale.identifier.rawValue, privacy: .public)")
+                try await NSFileProviderManager.remove(stale)
+            }
             if try await currentDomain() == nil {
                 log.info("register: adding domain")
                 try await NSFileProviderManager.add(FP.domain)

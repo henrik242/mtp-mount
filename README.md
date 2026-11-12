@@ -1,7 +1,8 @@
 # mtp-mount
 
-Mount a Garmin Edge (e.g. Edge 1040) — which exposes its storage over **MTP over
-USB** — as a browsable macOS volume, using Apple's **File Provider** API. No kernel
+Mount any device that exposes its storage over **MTP over USB** — Android
+phones, GPS units, cameras, music players, e-readers — as a browsable macOS
+volume, using Apple's **File Provider** API. No kernel
 extension, no reboot: the device appears in Finder's sidebar (under Locations)
 and under `~/Library/CloudStorage/`, and is usable from the Terminal (`ls`, `cp`,
 `rsync`).
@@ -14,27 +15,30 @@ Requires an Apple Silicon Mac on the latest macOS.
    [Releases](../../releases) page, open it and drag **MtpMount** to
    **Applications**. (It must run from Applications.)
 2. Open MtpMount from Applications. It installs a small helper and adds the
-   "Garmin Edge" location.
+   "MTP Device" location.
 3. If the window says so, turn on the extension: **System Settings → General →
    Login Items & Extensions → File Providers → MtpMount** (the window has a
    button that opens the right page).
-4. Connect the Edge with a USB data cable. The window shows **Connected**, and
-   the device appears in Finder's sidebar. "Show in Finder" opens it.
+4. Connect the device with a USB data cable and unlock it. On an Android phone,
+   tap the USB notification and choose **File transfer**. The window shows
+   **Connected: <device name>**, and the device appears in Finder's sidebar.
+   "Show in Finder" opens it.
 
-You can copy files off the device (activities live in `Garmin/Activity`), copy
-courses/workouts onto it (e.g. `Garmin/NewFiles`), and create, rename, move and
-delete files and folders. Editing a file in place on the device isn't
+You can copy files off the device, copy files onto it, and create, rename, move
+and delete files and folders. One device is shown at a time; with several
+attached, the one used last is kept. Editing a file in place on the device isn't
 possible (MTP has no partial writes): copy it to your Mac, edit it, copy it back.
 
 ### Troubleshooting
 
 - **"Device is in use by another app"** — macOS and other tools grab MTP
-  devices. Quit Garmin Express, Android File Transfer and OpenMTP. If Image
-  Capture or Photos opens when you plug in the Edge, open Image Capture, select
-  the device and set "Connecting this device opens" to **No application**.
-  Then unplug and reconnect.
+  devices. Quit Android File Transfer, OpenMTP and any sync app from the
+  device's maker. If Image Capture or Photos opens when you plug the device
+  in, open Image Capture, select the device and set "Connecting this device
+  opens" to **No application**. Then unplug and reconnect.
 - **"No device connected"** although it's plugged in — use a data cable (not a
-  charge-only one), unlock the device, and try another port/cable.
+  charge-only one), unlock the device, on a phone choose **File transfer** in
+  the USB notification, and try another port/cable.
 - **The location doesn't appear in Finder** — make sure the extension is
   enabled (step 3), then use **Troubleshooting → Reset** in the window.
 - **"The MtpMount helper isn't running"** — **Troubleshooting → Reinstall helper**.
@@ -53,11 +57,11 @@ location.)
   tree, proving the full macOS pipeline (signing, provisioning, entitlements,
   app group, replicated classification, enablement, enumeration, content fetch).
 - **Phase 1 (done):** the extension serves the **real device** over a `libmtp`
-  background agent + XPC. Browse the Edge in Finder and the Terminal and copy
-  files off it (`ls`, `cp`, `rsync`). Verified: copied `.fit` bytes are identical
-  to a direct libmtp download.
-- **Phase 2 (done):** read **/write**. Upload files (e.g. courses/workouts into
-  `Garmin/NewFiles`), create folders, rename, move, and delete — all from Finder
+  background agent + XPC. Browse the device in Finder and the Terminal and copy
+  files off it (`ls`, `cp`, `rsync`). Verified: copied bytes are identical to a
+  direct libmtp download.
+- **Phase 2 (done):** read **/write**. Upload files, create folders, rename,
+  move, and delete — all from Finder
   or the Terminal. In-place content edits aren't offered (MTP has no partial
   write; an edit would change the object id).
 - **Packaging (done):** libmtp + libusb are bundled into the app and the whole
@@ -73,7 +77,7 @@ MtpMount.app                        container app (NOT sandboxed) — registers 
   │    MtpMountFileProvider.appex    sandboxed replicated File Provider extension;
   │                                  all device I/O goes over XPC to the helper
   └─ Contents/MacOS/
-       garmin-mtp-agent             non-sandboxed helper owning the single libmtp
+       mtpmount-agent               non-sandboxed helper owning the single libmtp
                                     USB session; vends a launchd mach XPC service
 ```
 

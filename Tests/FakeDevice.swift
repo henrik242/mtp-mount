@@ -39,7 +39,7 @@ final class FakeDevice: MtpDevice {
     }
 
     func close() { isOpen = false }
-    func deviceName() -> String? { "Fake Edge" }
+    func deviceName() -> String? { "Fake Phone" }
     func serialNumber() -> String? { "SER123" }
     func ping() throws { try check() }
 

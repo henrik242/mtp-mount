@@ -1,7 +1,8 @@
 # Manual hardware test checklist
 
 Run on a signed build installed in /Applications with the extension enabled,
-against a real Garmin Edge (and, where noted, a second MTP device). Watch the
+against real MTP devices — at least an Android phone and one non-phone device
+(GPS, camera, player) — and, where noted, two at once. Watch the
 logs with:
 
 ```sh
@@ -13,11 +14,12 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 - [ ] App window shows "Connected: <device name>"
 - [ ] Unplug while idle: app shows "No device connected"; Finder shows the device as offline rather than empty, and nothing is deleted locally
 - [ ] Replug: Finder re-enumerates (sync anchor expired) and shows current contents without restarting anything
-- [ ] Open Image Capture / Garmin Express first, then plug in: app shows "in use by another app" with the hint; quitting that app and replugging recovers
+- [ ] Phone locked / USB mode "Charging only": app explains to unlock and choose "File transfer"; switching mode connects without replugging
+- [ ] Open Image Capture / Android File Transfer / a vendor sync app first, then plug in: app shows "in use by another app" with the hint; quitting that app and replugging recovers
 - [ ] Sleep the Mac with the device attached, wake: first browse works (or recovers on the next try)
 
 ## Transfers
-- [ ] Copy a `.fit` off the device: bytes identical to a direct libmtp download (`mtp-getfile`)
+- [ ] Copy a file off the device: bytes identical to a direct libmtp download (`mtp-getfile`)
 - [ ] Copy a >100 MB file to and from the device: Finder shows a progress bar
 - [ ] Cancel a large copy in Finder: the transfer stops and no partial file is left on the device
 - [ ] Unplug during a download: Finder reports an error, the agent reopens after replug
@@ -37,10 +39,11 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 
 ## Devices
 - [ ] A device with an SD card (second storage): a warning is logged and the first storage works
-- [ ] Two MTP devices attached: the Garmin one is opened
-- [ ] Swap the Edge for a different MTP device: Finder re-enumerates instead of showing the old tree
+- [ ] Two MTP devices attached: one is shown; after a replug of the same one, it stays the one shown
+- [ ] Swap one device for a different MTP device: Finder re-enumerates instead of showing the old tree
 
 ## Install / uninstall
+- [ ] Upgrading from a build with the old "Garmin Edge" location: it is removed and "MTP Device" appears
 - [ ] Fresh install from the DMG; run from the DMG first: the app warns to move it to Applications
 - [ ] Move the app after installing: reopening it rewrites and reloads the helper
 - [ ] Troubleshooting → Uninstall… removes `~/Library/LaunchAgents/no.synth.mtpmount.helper.plist` and the Finder location

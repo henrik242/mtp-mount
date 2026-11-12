@@ -43,7 +43,7 @@ targets:
         embed: true
       # Embed the libmtp helper into Contents/MacOS. The app installs a per-user
       # LaunchAgent pointing here and bootstraps it via launchctl at runtime.
-      - target: garmin-mtp-agent
+      - target: mtpmount-agent
         embed: true
         copy:
           destination: executables
@@ -60,7 +60,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         PROVISIONING_PROFILE_SPECIFIER: "MtpMount FileProvider DevID"
 
-  garmin-mtp-agent:
+  mtpmount-agent:
     type: tool
     platform: macOS
     sources:
@@ -72,7 +72,7 @@ targets:
       - path: Shared/Ids.swift
     settings:
       base:
-        PRODUCT_NAME: garmin-mtp-agent
+        PRODUCT_NAME: mtpmount-agent
         PRODUCT_BUNDLE_IDENTIFIER: no.synth.mtpmount.helper
         CODE_SIGN_ENTITLEMENTS: Agent/Agent.entitlements
         # Embedded Info.plist (__TEXT,__info_plist) gives the helper a stable

@@ -24,7 +24,7 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
 // MARK: - Entry point
 
 MtpSession.initializeLibrary()
-log.info("garmin-mtp-agent starting; vending \(MtpAgentConfig.machServiceName, privacy: .public)")
+log.info("mtpmount-agent starting; vending \(MtpAgentConfig.machServiceName, privacy: .public)")
 
 let service = AgentService(device: MtpSession())
 

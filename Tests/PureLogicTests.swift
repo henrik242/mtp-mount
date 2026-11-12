@@ -32,14 +32,14 @@ final class MtpIDTests: XCTestCase {
 }
 
 final class FileProviderItemTests: XCTestCase {
-    private func entry(_ name: String = "a.fit", folder: Bool = false, size: UInt64 = 10,
+    private func entry(_ name: String = "a.jpg", folder: Bool = false, size: UInt64 = 10,
                        parent: UInt32 = 0, modified: Double = 1_700_000_000) -> MtpEntry {
         MtpEntry(id: 5, parentID: parent, storageID: 1, name: name, size: size,
                  isFolder: folder, modified: modified)
     }
 
     func testRootCannotBeDeletedRenamedOrMoved() {
-        let caps = FileProviderItem(root: "Garmin Edge").capabilities
+        let caps = FileProviderItem(root: "MTP Device").capabilities
         XCTAssertTrue(caps.contains(.allowsAddingSubItems))
         XCTAssertFalse(caps.contains(.allowsDeleting))
         XCTAssertFalse(caps.contains(.allowsRenaming))
@@ -71,14 +71,14 @@ final class FileProviderItemTests: XCTestCase {
         XCTAssertTrue(base.isSame(as: FileProviderItem(entry: entry()).itemVersion))
         XCTAssertFalse(base.isSame(as: FileProviderItem(entry: entry(size: 11)).itemVersion))
         XCTAssertFalse(base.isSame(as: FileProviderItem(entry: entry(modified: 1)).itemVersion))
-        XCTAssertFalse(base.isSame(as: FileProviderItem(entry: entry("b.fit")).itemVersion))
+        XCTAssertFalse(base.isSame(as: FileProviderItem(entry: entry("b.jpg")).itemVersion))
         XCTAssertFalse(base.isSame(as: FileProviderItem(entry: entry(parent: 9)).itemVersion))
         // Both top-level parent encodings are the same location.
         XCTAssertTrue(base.isSame(as: FileProviderItem(entry: entry(parent: 0xFFFF_FFFF)).itemVersion))
     }
 
     func testEntryRoundTripsLargeSizesAndUnicode() throws {
-        let original = entry("Løype 🚴‍♀️.fit", size: 5_000_000_000)
+        let original = entry("Løype 🚴‍♀️.gpx", size: 5_000_000_000)
         let decoded = try JSONDecoder().decode(MtpEntry.self, from: JSONEncoder().encode(original))
         XCTAssertEqual(decoded, original)
     }
@@ -162,7 +162,7 @@ final class ClassifierTests: XCTestCase {
 
 final class SyncAnchorTests: XCTestCase {
     private func status(_ session: String?, serial: String? = "S1", connected: Bool = true) -> AgentStatus {
-        AgentStatus(connected: connected, deviceName: "Edge", serial: serial, sessionID: session,
+        AgentStatus(connected: connected, deviceName: "Phone", serial: serial, sessionID: session,
                     failure: nil, message: nil)
     }
 
