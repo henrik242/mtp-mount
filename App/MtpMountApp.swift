@@ -1,247 +1,148 @@
 import SwiftUI
-import FileProvider
-import os
-
-private let log = Logger(subsystem: "no.synth.mtpmount", category: "app")
 
 @main
 struct MtpMountApp: App {
     @StateObject private var controller = DomainController()
 
     var body: some Scene {
-        WindowGroup("Garmin MTP Mount") {
+        WindowGroup("MtpMount") {
             ContentView()
                 .environmentObject(controller)
-                .frame(minWidth: 420, minHeight: 240)
+                .frame(minWidth: 460, minHeight: 260)
                 .task { await controller.register() }
         }
         .windowResizability(.contentSize)
     }
 }
 
-/// Registers / removes the File Provider domain with the system.
-@MainActor
-final class DomainController: ObservableObject {
-    @Published var status: String = "Not registered"
-    @Published var agentStatus: String = "Agent: unknown"
-
-    init() {
-        Task { await refreshAgentStatus() }
-        refreshStatus()
-    }
-
-    /// Path to the embedded libmtp helper executable.
-    private var helperURL: URL {
-        Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/garmin-mtp-agent")
-    }
-
-    /// The per-user LaunchAgent plist we install for the helper.
-    private var launchAgentURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/LaunchAgents/\(MtpAgentConfig.agentLabel).plist")
-    }
-
-    private var launchdTarget: String { "gui/\(getuid())/\(MtpAgentConfig.agentLabel)" }
-
-    /// The LaunchAgent plist for the helper at its current location.
-    private func launchAgentPlist() throws -> Data {
-        let plist: [String: Any] = [
-            "Label": MtpAgentConfig.agentLabel,
-            "ProgramArguments": [helperURL.path],
-            "MachServices": [MtpAgentConfig.machServiceName: true],
-            "RunAtLoad": false,
-            "ProcessType": "Adaptive",
-        ]
-        return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-    }
-
-    /// Install the helper as a launchd agent the classic way: write a per-user
-    /// LaunchAgent plist and bootstrap it. launchd starts it on demand via its
-    /// mach service. (SMAppService's BTM path refuses a non-sandboxed helper
-    /// here, so we drive launchd directly — the app is non-sandboxed.)
-    ///
-    /// Idempotent: if the installed plist already points at this app's helper
-    /// and the job is loaded, nothing happens — so a running agent (and any
-    /// transfer in flight) is left alone. `force` reinstalls unconditionally.
-    func registerAgent(force: Bool = false) async {
-        let data: Data
-        do {
-            data = try launchAgentPlist()
-        } catch {
-            log.error("encoding LaunchAgent plist failed: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        let upToDate = (try? Data(contentsOf: launchAgentURL)) == data
-        let loaded = await Self.launchctl(["print", launchdTarget]).0 == 0
-        if upToDate && loaded && !force {
-            await refreshAgentStatus()
-            return
-        }
-        do {
-            try FileManager.default.createDirectory(
-                at: launchAgentURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true)
-            try data.write(to: launchAgentURL)
-        } catch {
-            log.error("writing LaunchAgent plist failed: \(error.localizedDescription, privacy: .public)")
-            await refreshAgentStatus()
-            return
-        }
-        // Only now (plist changed, e.g. the app moved, or forced) restart the job.
-        if loaded { _ = await Self.launchctl(["bootout", launchdTarget]) }
-        let (code, out) = await Self.launchctl(["bootstrap", "gui/\(getuid())", launchAgentURL.path])
-        log.info("agent bootstrap exit=\(code) \(out, privacy: .public)")
-        await refreshAgentStatus()
-    }
-
-    func unregisterAgent() async {
-        _ = await Self.launchctl(["bootout", launchdTarget])
-        try? FileManager.default.removeItem(at: launchAgentURL)
-        await refreshAgentStatus()
-    }
-
-    func refreshAgentStatus() async {
-        let (code, _) = await Self.launchctl(["print", launchdTarget])
-        let installed = FileManager.default.fileExists(atPath: launchAgentURL.path)
-        agentStatus = code == 0 ? "Agent: registered ✓"
-            : (installed ? "Agent: installed (not loaded)" : "Agent: not registered")
-    }
-
-    /// Run /bin/launchctl off the main actor and return (exitCode, combinedOutput).
-    private nonisolated static func launchctl(_ args: [String]) async -> (Int32, String) {
-        await Task.detached {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            p.arguments = args
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            p.standardError = pipe
-            do {
-                try p.run()
-                // Drain before waiting: a full pipe would block launchctl forever.
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                p.waitUntilExit()
-                return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
-            } catch {
-                return (-1, "launchctl failed: \(error.localizedDescription)")
-            }
-        }.value
-    }
-
-    /// Make sure the helper and the domain exist. Safe to call on every launch:
-    /// an existing domain (and its downloaded files / pending uploads) is kept.
-    func register() async {
-        await registerAgent()
-        do {
-            let domains = try await NSFileProviderManager.domains()
-            if domains.contains(where: { $0.identifier == FP.domainIdentifier }) {
-                status = "Registered ✓"
-                return
-            }
-            log.info("register: adding domain")
-            try await NSFileProviderManager.add(FP.domain)
-            status = "Registered ✓"
-        } catch {
-            log.error("register failed: \(error.localizedDescription, privacy: .public)")
-            status = "Register failed: \(error.localizedDescription)"
-        }
-    }
-
-    /// Troubleshooting: purge every domain of this provider (including stale
-    /// state from older registrations), reinstall the helper and re-add.
-    func reset() async {
-        do {
-            try await NSFileProviderManager.removeAllDomains()
-        } catch {
-            log.error("removeAllDomains failed: \(error.localizedDescription, privacy: .public)")
-        }
-        await registerAgent(force: true)
-        await register()
-    }
-
-    func remove() async {
-        do {
-            try await NSFileProviderManager.remove(FP.domain)
-            status = "Removed"
-        } catch {
-            status = "Remove failed: \(error.localizedDescription)"
-        }
-    }
-
-    /// Ask the system to re-enumerate so content changes show up.
-    func signalChange() async {
-        guard let mgr = NSFileProviderManager(for: FP.domain) else {
-            status = "No manager for domain"
-            return
-        }
-        do {
-            try await mgr.signalEnumerator(for: .workingSet)
-            status = "Signalled re-enumeration"
-        } catch {
-            status = "Signal failed: \(error.localizedDescription)"
-        }
-    }
-
-    func refreshStatus() {
-        Task {
-            let domains = (try? await NSFileProviderManager.domains()) ?? []
-            if domains.contains(where: { $0.identifier == FP.domainIdentifier }) {
-                status = "Registered ✓"
-            }
-        }
-    }
-
-    func openCloudStorage() {
-        let base = ("~/Library/CloudStorage" as NSString).expandingTildeInPath
-        NSWorkspace.shared.open(URL(fileURLWithPath: base))
-    }
-}
-
 struct ContentView: View {
     @EnvironmentObject var controller: DomainController
+    @State private var showTroubleshooting = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Garmin MTP Mount")
+            Text("MtpMount")
                 .font(.title2).bold()
-            Text("Live device over libmtp + XPC (read/write)")
-                .foregroundStyle(.secondary)
 
-            HStack {
-                Text("Status:")
-                Text(controller.status)
-                    .bold()
+            if !controller.isInApplicationsFolder {
+                Notice(symbol: "exclamationmark.triangle.fill", tint: .orange,
+                       title: "Move MtpMount to Applications",
+                       detail: "MtpMount must run from the Applications folder. Quit it, drag it to Applications, and open it from there.")
             }
-            Text(controller.agentStatus)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
-                Button("Register") { Task { await controller.register() } }
-                Button("Reset domain") { Task { await controller.reset() } }
-                Button("Remove domain") { Task { await controller.remove() } }
-                Button("Signal re-enumerate") { Task { await controller.signalChange() } }
-            }
-            HStack(spacing: 12) {
-                Button("Reinstall agent") { Task { await controller.registerAgent(force: true) } }
-                Button("Unregister agent") { Task { await controller.unregisterAgent() } }
-                Button("Refresh") {
-                    controller.refreshStatus()
-                    Task { await controller.refreshAgentStatus() }
+            if controller.domainRegistered && controller.extensionEnabled == false {
+                Notice(symbol: "puzzlepiece.extension.fill", tint: .orange,
+                       title: "Turn on the MtpMount extension",
+                       detail: "In System Settings → General → Login Items & Extensions, enable MtpMount under File Providers.") {
+                    Button("Open System Settings") { controller.openExtensionSettings() }
                 }
             }
 
-            Divider()
+            deviceRow
 
-            Button("Open ~/Library/CloudStorage in Finder") {
-                controller.openCloudStorage()
+            HStack {
+                Button("Show in Finder") { Task { await controller.showInFinder() } }
+                    .disabled(!controller.domainRegistered)
+                Spacer()
             }
-            Text("Look for a “Garmin” entry there and in Finder's sidebar.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
 
-            Spacer()
+            DisclosureGroup("Troubleshooting", isExpanded: $showTroubleshooting) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(controller.agentLoaded ? "Helper is installed" : "Helper is not installed",
+                          systemImage: controller.agentLoaded ? "checkmark.circle" : "xmark.circle")
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Button("Refresh Finder") { Task { await controller.signalChange() } }
+                        Button("Reinstall helper") { Task { await controller.registerAgent(force: true) } }
+                        Button("Reset") { Task { await controller.reset() } }
+                            .help("Removes and re-adds the Finder location. Downloaded copies are discarded.")
+                    }
+                    Button("Uninstall…", role: .destructive) { Task { await controller.uninstall() } }
+                        .help("Removes the helper and the Finder location so the app can be deleted.")
+                }
+                .padding(.top, 6)
+            }
+
+            if let message = controller.message {
+                Text(message).font(.footnote).foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
         }
         .padding(20)
+        .task {
+            // Keep the device state current while the window is open.
+            while !Task.isCancelled {
+                await controller.refreshDevice()
+                await controller.refreshDomain()
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
+    }
+
+    @ViewBuilder private var deviceRow: some View {
+        switch controller.device {
+        case .checking:
+            Notice(symbol: "ellipsis.circle", tint: .secondary, title: "Checking for a device…", detail: nil)
+        case .connected(let name):
+            Notice(symbol: "checkmark.circle.fill", tint: .green, title: "Connected: \(name)",
+                   detail: "Browse it in Finder's sidebar under Locations, or with “Show in Finder”.")
+        case .noDevice:
+            Notice(symbol: "cable.connector", tint: .secondary, title: "No device connected",
+                   detail: "Connect your Garmin Edge with a USB data cable and unlock it.")
+        case .busy(let message):
+            Notice(symbol: "hand.raised.fill", tint: .orange, title: "Device is in use by another app",
+                   detail: message.isEmpty
+                       ? "Quit Image Capture, Garmin Express, Android File Transfer or OpenMTP, then reconnect."
+                       : message)
+        case .agentUnavailable:
+            Notice(symbol: "exclamationmark.octagon.fill", tint: .red, title: "The MtpMount helper isn't running",
+                   detail: "Open Troubleshooting and choose “Reinstall helper”.")
+        case .error(let message):
+            Notice(symbol: "exclamationmark.triangle.fill", tint: .red, title: "Device error", detail: message)
+        }
+    }
+}
+
+/// A status line: icon, title and an optional explanation/next step, read by
+/// VoiceOver as one element.
+private struct Notice<Actions: View>: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    let detail: String?
+    @ViewBuilder var actions: () -> Actions
+
+    init(symbol: String, tint: Color, title: String, detail: String?,
+         @ViewBuilder actions: @escaping () -> Actions) {
+        self.symbol = symbol
+        self.tint = tint
+        self.title = title
+        self.detail = detail
+        self.actions = actions
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .font(.title3)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).bold()
+                if let detail {
+                    Text(detail).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                actions()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private extension Notice where Actions == EmptyView {
+    init(symbol: String, tint: Color, title: String, detail: String?) {
+        self.init(symbol: symbol, tint: tint, title: title, detail: detail) { EmptyView() }
     }
 }
