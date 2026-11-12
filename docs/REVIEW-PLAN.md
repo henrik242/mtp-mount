@@ -24,7 +24,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] 7. Structured errors over XPC, mapped to `NSFileProviderError` (`serverUnreachable`, `noSuchItem`, `filenameCollision`, `insufficientQuota`, `directoryNotEmpty`, …)
 - [x] 8. `modifyItem`: content edits / unknown parents (Trash) are rejected instead of silently "succeeding"; `baseVersion` checked
 - [x] 9. `createItem` returns the device's real metadata; honours `.mayAlreadyExist`; refuses duplicate names
-- [ ] 10. dylib/OS mismatch: deployment target = runner OS; bundle script verifies arm64 + `minos`
+- [x] 10. dylib/OS mismatch: deployment target = runner OS; bundle script verifies arm64 + `minos`
 - [ ] 11. "Device in use by another app" detected and reported clearly (agent, Finder error, app UI, README)
 
 ## Medium
@@ -37,9 +37,9 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] `launchctl` runs off the main actor and reads the pipe before waiting
 - [x] AgentClient: interruption keeps the connection; invalidation only clears the matching connection; temp file removed on XPC error; temp files go in the domain's temporary directory
 - [ ] LaunchAgent plist is rewritten + re-bootstrapped when the app has moved; warn when not run from /Applications
-- [ ] `disable-library-validation` only in Debug (release agent signed without it)
-- [ ] Scripts: `.appex` lookup can't silently exit under `pipefail`; libusb resolved robustly; `make-dmg.sh` parses flags properly, uses `ditto`, fails on Gatekeeper rejection when notarizing
-- [ ] Provisioning profiles installed where current Xcode looks for them
+- [x] `disable-library-validation` only in Debug (release agent signed without it)
+- [x] Scripts: `.appex` lookup can't silently exit under `pipefail`; libusb resolved robustly; `make-dmg.sh` parses flags properly, uses `ditto`, fails on Gatekeeper rejection when notarizing
+- [x] Provisioning profiles installed where current Xcode looks for them
 - [ ] *deferred* — multiple storages (SD card) shown as top-level folders: needs an identifier scheme change and hardware to test; a warning is logged when a device has >1 storage
 - [ ] *deferred* — copy+delete fallback for devices without MoveObject (File Provider requires the identifier to stay stable across `modifyItem`, which a re-upload can't do)
 - [ ] *won't fix* — `SMAppService` instead of a hand-written LaunchAgent: the README records that BTM refuses the non-sandboxed helper; relocation is handled instead
