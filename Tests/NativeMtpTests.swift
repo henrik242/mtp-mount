@@ -183,17 +183,20 @@ final class NativeMtpDeviceTests: XCTestCase {
     }
 
     func testUploadToRootUsesTheMTPRootHandle() throws {
-        let url = try tempFile(Data("hi".utf8))
-        let id = try open().upload(fromFileDescriptor: try FileHandle(forReadingFrom: url).fileDescriptor,
+        let file = try FileHandle(forReadingFrom: tempFile(Data("hi".utf8)))   // keep it open
+        let id = try open().upload(fromFileDescriptor: file.fileDescriptor,
                                    parent: MtpAgentConfig.rootParent, name: "a.txt", size: 2, progress: nil)
         XCTAssertEqual(sim.objects[id]?.parent, PTP.all)
+        XCTAssertEqual(sim.objects[id]?.data, Data("hi".utf8))
+        try file.close()
     }
 
     func testEmptyFileUpload() throws {
-        let url = try tempFile()
-        let id = try open().upload(fromFileDescriptor: try FileHandle(forReadingFrom: url).fileDescriptor,
+        let file = try FileHandle(forReadingFrom: tempFile())
+        let id = try open().upload(fromFileDescriptor: file.fileDescriptor,
                                    parent: MtpAgentConfig.rootParent, name: "empty", size: 0, progress: nil)
         XCTAssertEqual(sim.objects[id]?.data, Data())
+        try file.close()
     }
 
     func testCreateFolderRenameMoveDelete() throws {
