@@ -10,24 +10,43 @@ Finder's sidebar, and is usable from the Terminal (`ls`, `cp`, `rsync`).
 - **Phase 0 (done):** signed File Provider app + extension serving a static test
   tree, proving the full macOS pipeline (signing, provisioning, entitlements,
   app group, replicated classification, enablement, enumeration, content fetch).
-- **Phase 1 (in progress):** replace the static tree with the real device via a
-  `libmtp` background agent + XPC (read-only first: browse + copy `.fit` files off
-  the Edge).
+- **Phase 1 (done, read-only):** the extension serves the **real device** over a
+  `libmtp` background agent + XPC. Browse the Edge in Finder and the Terminal and
+  copy files off it (`ls`, `cp`, `rsync`). Verified: copied `.fit` bytes are
+  identical to a direct libmtp download.
+- **Later:** writes (upload courses/workouts, delete); bundle libmtp for
+  notarized distribution.
 
 ## Architecture
 
 ```
-MtpMount.app                         container app — registers the File Provider domain
-  └─ Contents/PlugIns/
-       MtpMountFileProvider.appex     sandboxed replicated File Provider extension
-garmin-mtp-agent  (Phase 1)          non-sandboxed LaunchAgent owning the libmtp/USB
-                                     session, reached by the extension over XPC
+MtpMount.app                        container app (NOT sandboxed) — registers the
+  │                                 File Provider domain and installs the helper
+  ├─ Contents/PlugIns/
+  │    MtpMountFileProvider.appex    sandboxed replicated File Provider extension;
+  │                                  all device I/O goes over XPC to the helper
+  └─ Contents/MacOS/
+       garmin-mtp-agent             non-sandboxed helper owning the single libmtp
+                                    USB session; vends a launchd mach XPC service
 ```
+
+The app installs the helper as a per-user LaunchAgent
+(`~/Library/LaunchAgents/no.synth.mtpmount.helper.plist`) and `launchctl
+bootstrap`s it; launchd then starts it on demand when the extension looks up its
+mach service. (We drive launchd directly instead of `SMAppService` because BTM
+refuses to let an app register a non-sandboxed helper.)
+
+The helper reads MTP folders on demand (`LIBMTP_Get_Files_And_Folders`, uncached)
+for enumeration, and for a file download streams
+`LIBMTP_Get_File_To_File_Descriptor` into a file descriptor the sandboxed
+extension passes over XPC.
 
 ## Build
 
 Requires Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install
-xcodegen`), and an Apple Developer account signed into Xcode.
+xcodegen`), **libmtp** (`brew install libmtp`), and an Apple Developer account
+signed into Xcode. The helper currently links Homebrew's libmtp at
+`/opt/homebrew/opt/libmtp/lib/libmtp.9.dylib`.
 
 ```sh
 xcodegen generate

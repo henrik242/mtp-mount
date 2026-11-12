@@ -3,8 +3,8 @@ import os
 
 let extLog = Logger(subsystem: "no.synth.mtpmount", category: "ext")
 
-/// The replicated File Provider extension. Phase 0 serves a static tree;
-/// Phase 1 delegates to a libmtp background agent over XPC.
+/// The replicated File Provider extension. Delegates all device I/O to the
+/// non-sandboxed libmtp agent over XPC (see `AgentClient`). Read-only.
 final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     let domain: NSFileProviderDomain
 
@@ -22,10 +22,23 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
               request: NSFileProviderRequest,
               completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) -> Progress {
         extLog.info("item(for: \(identifier.rawValue, privacy: .public))")
-        if let node = FakeTree.node(identifier) {
-            completionHandler(FileProviderItem(node), nil)
-        } else {
+        if identifier == .rootContainer {
+            completionHandler(FileProviderItem(root: "Garmin Edge"), nil)
+            return Progress()
+        }
+        guard let objectID = UInt32(identifier.rawValue) else {
             completionHandler(nil, fpError(.noSuchItem))
+            return Progress()
+        }
+        AgentClient.shared.item(objectID: objectID) { result in
+            switch result {
+            case .success(let entry?):
+                completionHandler(FileProviderItem(entry: entry), nil)
+            case .success(nil):
+                completionHandler(nil, fpError(.noSuchItem))
+            case .failure(let error):
+                completionHandler(nil, error)
+            }
         }
         return Progress()
     }
@@ -36,19 +49,31 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                        version requestedVersion: NSFileProviderItemVersion?,
                        request: NSFileProviderRequest,
                        completionHandler: @escaping (URL?, NSFileProviderItem?, Error?) -> Void) -> Progress {
-        guard let node = FakeTree.node(itemIdentifier), !node.isFolder else {
+        guard let objectID = UInt32(itemIdentifier.rawValue) else {
             completionHandler(nil, nil, fpError(.noSuchItem))
             return Progress()
         }
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        do {
-            try FakeTree.contents(of: node).write(to: tmp)
-            completionHandler(tmp, FileProviderItem(node), nil)
-        } catch {
-            completionHandler(nil, nil, error)
+        let progress = Progress(totalUnitCount: 1)
+        // Fetch metadata and contents; the system needs both the file URL and the item.
+        AgentClient.shared.item(objectID: objectID) { itemResult in
+            switch itemResult {
+            case .failure(let error):
+                completionHandler(nil, nil, error)
+            case .success(nil):
+                completionHandler(nil, nil, fpError(.noSuchItem))
+            case .success(let entry?):
+                AgentClient.shared.fetch(objectID: objectID) { fetchResult in
+                    switch fetchResult {
+                    case .success(let url):
+                        completionHandler(url, FileProviderItem(entry: entry), nil)
+                    case .failure(let error):
+                        completionHandler(nil, nil, error)
+                    }
+                    progress.completedUnitCount = 1
+                }
+            }
         }
-        return Progress()
+        return progress
     }
 
     // MARK: - Enumeration

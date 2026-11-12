@@ -35,6 +35,12 @@ targets:
     dependencies:
       - target: MtpMountFileProvider
         embed: true
+      # Embed the libmtp helper into Contents/MacOS. The app installs a per-user
+      # LaunchAgent pointing here and bootstraps it via launchctl at runtime.
+      - target: garmin-mtp-agent
+        embed: true
+        copy:
+          destination: executables
 
   MtpMountFileProvider:
     type: app-extension
@@ -47,3 +53,33 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Extension/Extension.entitlements
         GENERATE_INFOPLIST_FILE: NO
         PROVISIONING_PROFILE_SPECIFIER: "MtpMount FileProvider DevID"
+
+  garmin-mtp-agent:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Agent
+        excludes:
+          - "CLibmtp/**"
+          - "Info.plist"
+          - "*.plist"
+      - path: Shared/MtpXPC.swift
+    settings:
+      base:
+        PRODUCT_NAME: garmin-mtp-agent
+        PRODUCT_BUNDLE_IDENTIFIER: no.synth.mtpmount.helper
+        CODE_SIGN_ENTITLEMENTS: Agent/Agent.entitlements
+        # SMAppService helper executables must carry an embedded Info.plist
+        # (__TEXT,__info_plist) with a bundle id so BTM can track the item.
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Agent/Info.plist
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        # Non-sandboxed tool; no provisioning profile needed (no profile-restricted
+        # entitlements). Developer ID signing + hardened runtime only.
+        PROVISIONING_PROFILE_SPECIFIER: ""
+        # Find the CLibmtp module map, the libmtp headers, and the dylib.
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Agent/CLibmtp"
+        HEADER_SEARCH_PATHS: /opt/homebrew/include
+        LIBRARY_SEARCH_PATHS: /opt/homebrew/lib
+        OTHER_SWIFT_FLAGS: "-Xcc -I/opt/homebrew/include"
+        OTHER_LDFLAGS: "-lmtp"

@@ -23,13 +23,93 @@ struct MtpMountApp: App {
 @MainActor
 final class DomainController: ObservableObject {
     @Published var status: String = "Not registered"
+    @Published var agentStatus: String = "Agent: unknown"
     @Published var cloudStoragePath: String = ""
 
     init() {
         refreshStatus()
+        refreshAgentStatus()
+    }
+
+    /// Path to the embedded libmtp helper executable.
+    private var helperURL: URL {
+        Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/garmin-mtp-agent")
+    }
+
+    /// The per-user LaunchAgent plist we install for the helper.
+    private var launchAgentURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/\(MtpAgentConfig.agentLabel).plist")
+    }
+
+    /// Install the helper as a launchd agent the classic way: write a per-user
+    /// LaunchAgent plist and (re)bootstrap it. Run on-demand via its mach service.
+    /// (SMAppService's BTM path refuses a non-sandboxed helper here, so we drive
+    /// launchd directly — the app is non-sandboxed, so this is permitted.)
+    func registerAgent() {
+        let plist: [String: Any] = [
+            "Label": MtpAgentConfig.agentLabel,
+            "ProgramArguments": [helperURL.path],
+            "MachServices": [MtpAgentConfig.machServiceName: true],
+            "RunAtLoad": false,
+            "ProcessType": "Adaptive",
+        ]
+        do {
+            try FileManager.default.createDirectory(
+                at: launchAgentURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: plist, format: .xml, options: 0)
+            try data.write(to: launchAgentURL)
+        } catch {
+            log.error("writing LaunchAgent plist failed: \(error.localizedDescription, privacy: .public)")
+            refreshAgentStatus()
+            return
+        }
+        let domain = "gui/\(getuid())"
+        _ = Self.launchctl(["bootout", "\(domain)/\(MtpAgentConfig.agentLabel)"])
+        let (code, out) = Self.launchctl(["bootstrap", domain, launchAgentURL.path])
+        log.info("agent bootstrap exit=\(code) \(out, privacy: .public)")
+        refreshAgentStatus()
+    }
+
+    func unregisterAgent() {
+        _ = Self.launchctl(["bootout", "gui/\(getuid())/\(MtpAgentConfig.agentLabel)"])
+        try? FileManager.default.removeItem(at: launchAgentURL)
+        refreshAgentStatus()
+    }
+
+    func refreshAgentStatus() {
+        let (code, _) = Self.launchctl(["print", "gui/\(getuid())/\(MtpAgentConfig.agentLabel)"])
+        let installed = FileManager.default.fileExists(atPath: launchAgentURL.path)
+        let text = code == 0 ? "Agent: registered ✓"
+            : (installed ? "Agent: installed (not loaded)" : "Agent: not registered")
+        Task { @MainActor in self.agentStatus = text }
+    }
+
+    /// Run /bin/launchctl and return (exitCode, combinedOutput).
+    @discardableResult
+    private static func launchctl(_ args: [String]) -> (Int32, String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        do {
+            try p.run()
+            p.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        } catch {
+            return (-1, "launchctl failed: \(error.localizedDescription)")
+        }
     }
 
     func register() {
+        // Make sure the helper is registered before we add the domain.
+        registerAgent()
+
         let domain = NSFileProviderDomain(
             identifier: FP.domainIdentifier,
             displayName: FP.domainDisplayName
@@ -108,7 +188,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Garmin MTP Mount")
                 .font(.title2).bold()
-            Text("Phase 0 — static test tree (no device yet)")
+            Text("Phase 1 — live device over libmtp + XPC (read-only)")
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -116,11 +196,19 @@ struct ContentView: View {
                 Text(controller.status)
                     .bold()
             }
+            Text(controller.agentStatus)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
-                Button("Register domain") { controller.register() }
+                Button("Register") { controller.register() }
                 Button("Remove domain") { controller.remove() }
                 Button("Signal re-enumerate") { controller.signalChange() }
+            }
+            HStack(spacing: 12) {
+                Button("Register agent") { controller.registerAgent() }
+                Button("Unregister agent") { controller.unregisterAgent() }
+                Button("Refresh") { controller.refreshStatus(); controller.refreshAgentStatus() }
             }
 
             Divider()

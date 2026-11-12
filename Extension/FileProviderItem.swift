@@ -1,41 +1,64 @@
 import FileProvider
 import UniformTypeIdentifiers
 
-/// Adapts a `Node` to the `NSFileProviderItem` protocol the system consumes.
+/// Adapts an `MtpEntry` (or the synthetic root) to `NSFileProviderItem`.
 final class FileProviderItem: NSObject, NSFileProviderItem {
-    private let node: Node
+    private let id: NSFileProviderItemIdentifier
+    private let parent: NSFileProviderItemIdentifier
+    private let name: String
+    private let isFolder: Bool
+    private let size: UInt64
+    private let modified: Double
 
-    init(_ node: Node) {
-        self.node = node
+    /// Wrap a real MTP entry.
+    init(entry: MtpEntry) {
+        self.id = MtpID.identifier(forObject: entry.id)
+        self.parent = MtpID.parentIdentifier(forParent: entry.parentID)
+        self.name = entry.name
+        self.isFolder = entry.isFolder
+        self.size = entry.size
+        self.modified = entry.modified
     }
 
-    var itemIdentifier: NSFileProviderItemIdentifier { node.id }
-    var parentItemIdentifier: NSFileProviderItemIdentifier { node.parent }
-    var filename: String { node.name }
+    /// The synthetic root container (the device itself).
+    init(root displayName: String) {
+        self.id = .rootContainer
+        self.parent = .rootContainer
+        self.name = displayName
+        self.isFolder = true
+        self.size = 0
+        self.modified = 0
+    }
+
+    var itemIdentifier: NSFileProviderItemIdentifier { id }
+    var parentItemIdentifier: NSFileProviderItemIdentifier { parent }
+    var filename: String { name }
 
     var contentType: UTType {
-        node.isFolder ? .folder : (UTType(filenameExtension: (node.name as NSString).pathExtension) ?? .data)
+        if isFolder { return .folder }
+        let ext = (name as NSString).pathExtension
+        return UTType(filenameExtension: ext) ?? .data
     }
 
     var capabilities: NSFileProviderItemCapabilities {
-        // Read-only for now (Phase 1 stays read-only; writes are a later phase).
-        node.isFolder ? [.allowsReading, .allowsContentEnumerating] : [.allowsReading]
+        // Read-only (Phase 1). Writes are a later phase.
+        isFolder ? [.allowsReading, .allowsContentEnumerating] : [.allowsReading]
     }
 
     var documentSize: NSNumber? {
-        node.isFolder ? nil : NSNumber(value: node.size)
+        isFolder ? nil : NSNumber(value: size)
     }
 
-    var childItemCount: NSNumber? {
-        node.isFolder ? NSNumber(value: FakeTree.children(of: node.id).count) : nil
+    var contentModificationDate: Date? {
+        modified > 0 ? Date(timeIntervalSince1970: modified) : nil
     }
 
-    /// Stable version so the system knows when content/metadata changed.
-    /// Phase 1 derives these from MTP modification time / object id.
+    /// Versions the system uses to detect content/metadata changes. Derived from
+    /// MTP size + modification time, so a changed file re-materializes.
     var itemVersion: NSFileProviderItemVersion {
         NSFileProviderItemVersion(
-            contentVersion: Data("c1-\(node.size)".utf8),
-            metadataVersion: Data("m1-\(node.name)".utf8)
+            contentVersion: Data("\(size)-\(modified)".utf8),
+            metadataVersion: Data("\(name)-\(parent.rawValue)".utf8)
         )
     }
 }
