@@ -312,8 +312,14 @@ final class MtpSession: MtpDevice {
 
     // MARK: - Writes
 
-    /// The parent to pass to libmtp's write calls for the top of storage.
-    private static func writeParent(_ parent: UInt32) -> UInt32 {
+    /// The parent for creating objects at the top of storage: MTP's root
+    /// handle 0xFFFFFFFF (Android rejects 0).
+    private static func createParent(_ parent: UInt32) -> UInt32 {
+        parent == MtpAgentConfig.rootParent ? 0xFFFF_FFFF : parent
+    }
+
+    /// The parent for MoveObject, where the top of storage is 0.
+    private static func moveParent(_ parent: UInt32) -> UInt32 {
         parent == MtpAgentConfig.rootParent ? 0 : parent
     }
 
@@ -325,7 +331,7 @@ final class MtpSession: MtpDevice {
         let dev = try openDevice()
         guard let meta = LIBMTP_new_file_t() else { throw MtpError(.failed, "Out of memory.") }
         defer { LIBMTP_destroy_file_t(meta) }   // frees filename too
-        meta.pointee.parent_id = Self.writeParent(parent)
+        meta.pointee.parent_id = Self.createParent(parent)
         meta.pointee.storage_id = storageID
         meta.pointee.filesize = size
         meta.pointee.filetype = LIBMTP_FILETYPE_UNKNOWN
@@ -354,7 +360,7 @@ final class MtpSession: MtpDevice {
         // a buffer it's allowed to mutate.
         guard let cname = strdup(name) else { throw MtpError(.failed, "Out of memory.") }
         defer { free(cname) }
-        let id = LIBMTP_Create_Folder(dev, cname, Self.writeParent(parent), storageID)
+        let id = LIBMTP_Create_Folder(dev, cname, Self.createParent(parent), storageID)
         if id == 0 { throw failure(dev, "Creating folder “\(name)”") }
         return id
     }
@@ -382,7 +388,7 @@ final class MtpSession: MtpDevice {
         guard LIBMTP_Check_Capability(dev, LIBMTP_DEVICECAP_MoveObject) != 0 else {
             throw MtpError(.unsupported, "This device can't move files between folders.")
         }
-        let rc = LIBMTP_Move_Object(dev, id, storageID, Self.writeParent(parent))
+        let rc = LIBMTP_Move_Object(dev, id, storageID, Self.moveParent(parent))
         if rc != 0 { throw failure(dev, "Moving object \(id)") }
     }
 

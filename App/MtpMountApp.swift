@@ -81,6 +81,10 @@ struct ContentView: View {
                         Button("Reset") { Task { await controller.reset() } }
                             .help("Removes and re-adds the Finder locations. Downloaded copies are discarded.")
                     }
+                    Toggle("Use the built-in MTP driver (instead of libmtp)", isOn: Binding(
+                        get: { controller.backend == .native },
+                        set: { controller.backend = $0 ? .native : .libmtp }))
+                        .help("MtpMount's own MTP implementation. The helper restarts when you change this.")
                     Button("Uninstall…", role: .destructive) { Task { await controller.uninstall() } }
                         .help("Removes the helper and the Finder locations so the app can be deleted.")
                 }
