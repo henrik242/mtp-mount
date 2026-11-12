@@ -29,6 +29,8 @@ enum AgentProblem: Equatable {
 final class DomainController: ObservableObject {
     @Published private(set) var rows: [DeviceRow] = []
     @Published private(set) var problem: AgentProblem = .none
+    /// Attached cameras MtpMount leaves to Image Capture / Photos.
+    @Published private(set) var ignoredDevices: [String] = []
     @Published private(set) var checked = false
     @Published private(set) var agentLoaded = false
     /// Last result of a troubleshooting action.
@@ -170,9 +172,11 @@ final class DomainController: ObservableObject {
         switch overview {
         case .failure:
             attached = []
+            ignoredDevices = []
             problem = .agentUnavailable
         case .success(let o):
             attached = o.devices
+            ignoredDevices = o.ignoredDevices
             switch o.problem {
             case .deviceBusy?: problem = .busy(message: o.message ?? "")
             case nil, .noDevice?: problem = .none

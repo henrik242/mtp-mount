@@ -35,6 +35,9 @@ enum MtpFailure: Int, Codable, CaseIterable {
     case cancelled
     /// Anything else the device refused.
     case failed
+    /// A camera (all storage in the camera file system, DCF): not a file
+    /// device, so it's released and left to Image Capture / Photos.
+    case notFileDevice
 
     /// Whether the USB session is unusable afterwards and must be reopened.
     var isTransport: Bool { self == .disconnected }
@@ -61,6 +64,8 @@ struct AgentOverview: Codable, Equatable {
     /// Why a device that's attached isn't listed (e.g. `.deviceBusy`), if any.
     var problem: MtpFailure?
     var message: String?
+    /// Names of attached cameras that were left alone (see `.notFileDevice`).
+    var ignoredDevices: [String] = []
 
     func device(_ key: String) -> DeviceStatus? { devices.first { $0.key == key } }
 }

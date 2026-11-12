@@ -27,6 +27,9 @@ final class AgentService: NSObject, MtpAgentXPC {
     private var lastScan: Date?
     /// Why the last scan couldn't open an attached device, if it couldn't.
     private var problem: MtpError?
+    /// Attached cameras (not file devices), by location, with their names.
+    /// They aren't opened again until they're detached.
+    private var ignored: [UInt64: String] = [:]
     private var devices: [String: OpenDevice] = [:]
     private var eventTimer: DispatchSourceTimer?
 
@@ -102,13 +105,19 @@ final class AgentService: NSObject, MtpAgentXPC {
             problem = MtpError(error)
             return
         }
+        let attachedLocations = Set(attached.map(\.location))
+        ignored = ignored.filter { attachedLocations.contains($0.key) }
         let openLocations = Set(devices.values.map(\.raw.location))
-        for raw in attached where !openLocations.contains(raw.location) {
+        for raw in attached where !openLocations.contains(raw.location) && ignored[raw.location] == nil {
             let device: MtpDevice
             do {
                 device = try bus.open(raw)
             } catch {
                 let e = MtpError(error)
+                if e.kind == .notFileDevice {
+                    ignored[raw.location] = e.message
+                    continue
+                }
                 problem = e
                 log.error("opening device at \(raw.location) failed: \(e.message, privacy: .public)")
                 continue
@@ -350,7 +359,8 @@ final class AgentService: NSObject, MtpAgentXPC {
             let overview = AgentOverview(
                 devices: self.devices.values.map(\.status).sorted { $0.name < $1.name },
                 problem: self.problem?.kind,
-                message: self.problem?.message)
+                message: self.problem?.message,
+                ignoredDevices: self.ignored.values.sorted())
             reply(try? Self.encode(overview))
         }
     }
