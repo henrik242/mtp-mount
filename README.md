@@ -219,3 +219,14 @@ files, and `Shared/*.swift` (`MtpAgentConfig.teamID`).
 The helper only accepts XPC connections from the extension and the app signed
 by this team (and the extension only talks to a helper signed by it), so
 unsigned or differently-signed local builds can't talk to each other.
+
+## License
+
+MtpMount is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 2 of the License, or (at your option) any later
+version. See [`LICENSE`](LICENSE).
+
+Release builds bundle libmtp and libusb (both LGPL-2.1-or-later); see
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md). The license texts are also
+shipped inside the app (`Contents/Resources/Licenses`) and in the DMG.

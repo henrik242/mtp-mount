@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 # Build a distributable disk image from a signed MtpMount.app: a compressed
 # DMG containing the app plus an /Applications drag-install target, signed with
@@ -50,6 +51,9 @@ trap 'rm -rf "$STAGE"' EXIT
 # ditto preserves signatures, xattrs and symlinks inside the bundle.
 ditto "$APP" "$STAGE/$(basename "$APP")"
 ln -s /Applications "$STAGE/Applications"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cp "$REPO/LICENSE" "$STAGE/LICENSE.txt"
+cp "$REPO/THIRD-PARTY-NOTICES.md" "$STAGE/THIRD-PARTY-NOTICES.md"
 
 echo "==> Creating $OUT"
 rm -f "$OUT"

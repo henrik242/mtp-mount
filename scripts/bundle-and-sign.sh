@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 # Make MtpMount.app self-contained and (re)sign it with Developer ID so it can be
 # notarized: copy libmtp + libusb into Contents/Frameworks, rewrite their link
@@ -92,6 +93,17 @@ for bin in "$FW/libmtp.9.dylib" "$FW/libusb-1.0.0.dylib" "$AGENT"; do
         || die "$(basename "$bin") needs macOS $minos but the app claims $MIN_OS; raise the deployment target"
     echo "    $(basename "$bin"): $archs, minos $minos"
 done
+
+echo "==> Adding license texts to Contents/Resources/Licenses"
+LIC="$APP/Contents/Resources/Licenses"
+mkdir -p "$LIC"
+cp "$REPO/LICENSE" "$LIC/LICENSE.txt"
+cp "$REPO/THIRD-PARTY-NOTICES.md" "$LIC/THIRD-PARTY-NOTICES.md"
+cp "$REPO/licenses/LGPL-2.1.txt" "$LIC/LGPL-2.1.txt"
+{
+    echo "Libraries bundled in this build:"
+    brew list --versions libmtp libusb 2>/dev/null || echo "(versions unavailable: not built with Homebrew)"
+} > "$LIC/BUNDLED-VERSIONS.txt"
 
 echo "==> Code signing inside-out (Developer ID, hardened runtime)"
 CS=(codesign --force --options runtime --sign "$SIGN_IDENTITY")

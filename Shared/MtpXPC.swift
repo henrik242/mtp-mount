@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
 /// One entry (file or folder) in the MTP object tree. Shared wire type: the agent

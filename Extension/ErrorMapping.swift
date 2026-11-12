@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 import FileProvider
 
 /// Build a File Provider error, optionally with a user-facing message and the
