@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
 /// Thin XPC client the extension uses to reach the non-sandboxed libmtp agent.

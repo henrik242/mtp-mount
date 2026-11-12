@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
 /// Asks the helper agent which devices are attached, over XPC (the app is not
