@@ -8,6 +8,9 @@ enum FP {
     /// Display name — becomes the label in Finder's sidebar and the
     /// ~/Library/CloudStorage folder name.
     static let domainDisplayName = "Garmin Edge"
-    /// App Group shared between app + extension (team-prefixed on macOS).
-    static let appGroup = "358L7UXVJ4.no.synth.mtpmount"
+
+    /// The one domain this provider serves.
+    static var domain: NSFileProviderDomain {
+        NSFileProviderDomain(identifier: domainIdentifier, displayName: domainDisplayName)
+    }
 }
