@@ -65,7 +65,6 @@ targets:
       - path: Agent
         excludes:
           - "CLibmtp/**"
-          - "Info.plist"
           - "*.plist"
       - path: Shared/MtpXPC.swift
       - path: Shared/Ids.swift
@@ -74,8 +73,8 @@ targets:
         PRODUCT_NAME: garmin-mtp-agent
         PRODUCT_BUNDLE_IDENTIFIER: no.synth.mtpmount.helper
         CODE_SIGN_ENTITLEMENTS: Agent/Agent.entitlements
-        # SMAppService helper executables must carry an embedded Info.plist
-        # (__TEXT,__info_plist) with a bundle id so BTM can track the item.
+        # Embedded Info.plist (__TEXT,__info_plist) gives the helper a stable
+        # bundle id, which is also its code-signing identifier.
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Agent/Info.plist
         CREATE_INFOPLIST_SECTION_IN_BINARY: YES
@@ -84,10 +83,13 @@ targets:
         PROVISIONING_PROFILE_SPECIFIER: ""
         # Find the CLibmtp module map, the libmtp headers, and the dylib.
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Agent/CLibmtp"
-        HEADER_SEARCH_PATHS: /opt/homebrew/include
         LIBRARY_SEARCH_PATHS: /opt/homebrew/lib
         OTHER_SWIFT_FLAGS: "-Xcc -I/opt/homebrew/include"
         OTHER_LDFLAGS: "-lmtp"
         # So the bundled libmtp/libusb in Contents/Frameworks are found at runtime
         # (see scripts/bundle-and-sign.sh, which rewrites the link paths to @rpath).
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+      configs:
+        Debug:
+          # Unbundled debug helper loads Homebrew's libmtp (other team's signature).
+          CODE_SIGN_ENTITLEMENTS: Agent/Agent-Debug.entitlements

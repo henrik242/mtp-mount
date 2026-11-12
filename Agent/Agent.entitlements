@@ -2,10 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Not sandboxed (no app-sandbox key): owns raw USB via libmtp/libusb. -->
-    <!-- Hardened runtime is on; allow loading the Homebrew libmtp dylib (signed
-         by a different team). -->
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
+    <!-- Not sandboxed (no app-sandbox key): owns raw USB via libmtp/libusb.
+         Hardened runtime with library validation ON: scripts/bundle-and-sign.sh
+         re-signs the bundled libmtp/libusb with our own identity, so nothing
+         else needs to load. Debug builds use Agent-Debug.entitlements. -->
 </dict>
 </plist>
