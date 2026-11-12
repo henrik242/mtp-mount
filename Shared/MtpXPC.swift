@@ -20,7 +20,8 @@ enum MtpFailure: Int, Codable, CaseIterable {
     /// No MTP device on USB.
     case noDevice = 1
     /// A device is there but couldn't be opened — usually another app
-    /// (Image Capture, Garmin Express, Android File Transfer) holds it.
+    /// (Image Capture, Android File Transfer, a vendor sync app) holds it, or
+    /// a phone is locked / not in file-transfer mode.
     case deviceBusy
     /// The USB/PTP transport failed (unplugged, timed out, I/O error).
     case disconnected
@@ -60,6 +61,8 @@ enum MtpAgentConfig {
     static let teamID = "358L7UXVJ4"
     /// Logging subsystem shared by all components.
     static let logSubsystem = "no.synth.mtpmount"
+    /// File name of the helper executable in Contents/MacOS.
+    static let agentExecutable = "mtpmount-agent"
     /// launchd job label for the helper agent.
     static let agentLabel = "no.synth.mtpmount.helper"
     /// launchd-registered mach service the agent vends and the extension looks up.

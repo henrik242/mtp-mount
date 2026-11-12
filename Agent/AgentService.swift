@@ -105,7 +105,8 @@ final class AgentService: NSObject, MtpAgentXPC {
     // MARK: - Helpers
 
     /// Fail with `.nameCollision` if `parent` already has a child called `name`
-    /// (other than `excluding`). Compared case-insensitively: Garmin storage is FAT.
+    /// (other than `excluding`). Compared case-insensitively: device storage is usually FAT/exFAT or a
+    /// case-folding Android filesystem.
     private func checkNameFree(_ name: String, in parent: UInt32, excluding: UInt32? = nil) throws {
         let clash = try device.list(parent: parent).contains {
             $0.id != excluding && $0.name.caseInsensitiveCompare(name) == .orderedSame

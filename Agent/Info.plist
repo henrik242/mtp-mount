@@ -5,7 +5,7 @@
     <key>CFBundleIdentifier</key>
     <string>no.synth.mtpmount.helper</string>
     <key>CFBundleName</key>
-    <string>garmin-mtp-agent</string>
+    <string>mtpmount-agent</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>

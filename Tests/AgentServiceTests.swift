@@ -44,11 +44,11 @@ final class AgentServiceTests: XCTestCase {
     // MARK: - Session handling
 
     func testOpensLazilyAndLists() {
-        device.add("Garmin", folder: true)
+        device.add("DCIM", folder: true)
         XCTAssertFalse(device.isOpen)
         let result = list()
         XCTAssertNil(result.error)
-        XCTAssertEqual(result.entries?.map(\.name), ["Garmin"])
+        XCTAssertEqual(result.entries?.map(\.name), ["DCIM"])
         XCTAssertTrue(device.isOpen)
         XCTAssertEqual(sessionChanges.count, 1)
     }
@@ -120,18 +120,18 @@ final class AgentServiceTests: XCTestCase {
     }
 
     func testNonRecursiveDeleteOfNonEmptyFolderIsRefused() {
-        let folder = device.add("Courses", folder: true)
-        device.add("a.fit", parent: folder)
+        let folder = device.add("Camera", folder: true)
+        device.add("a.jpg", parent: folder)
         XCTAssertEqual(delete(folder, recursive: false)?.mtpFailure, .directoryNotEmpty)
         XCTAssertNotNil(device.objects[folder])
     }
 
     func testRecursiveDeleteRemovesTree() {
-        let folder = device.add("Courses", folder: true)
+        let folder = device.add("Camera", folder: true)
         let sub = device.add("Old", parent: folder, folder: true)
-        device.add("a.fit", parent: folder)
-        device.add("b.fit", parent: sub)
-        let keep = device.add("keep.fit")
+        device.add("a.jpg", parent: folder)
+        device.add("b.jpg", parent: sub)
+        let keep = device.add("keep.jpg")
         XCTAssertNil(delete(folder, recursive: true))
         XCTAssertEqual(Array(device.objects.keys), [keep])
     }
@@ -146,15 +146,15 @@ final class AgentServiceTests: XCTestCase {
     }
 
     func testRenameToOwnNameWithDifferentCaseIsAllowed() {
-        let id = device.add("course.fit")
-        let error: NSError? = call { reply in service.rename(objectID: id, to: "Course.fit") { reply($0) } }
+        let id = device.add("course.jpg")
+        let error: NSError? = call { reply in service.rename(objectID: id, to: "Course.jpg") { reply($0) } }
         XCTAssertNil(error)
-        XCTAssertEqual(device.objects[id]?.name, "Course.fit")
+        XCTAssertEqual(device.objects[id]?.name, "Course.jpg")
     }
 
     func testMoveUnsupportedKeepsSession() {
         let folder = device.add("Dst", folder: true)
-        let id = device.add("a.fit")
+        let id = device.add("a.jpg")
         device.supportsMove = false
         let error: NSError? = call { reply in service.move(objectID: id, toParent: folder) { reply($0) } }
         XCTAssertEqual(error?.mtpFailure, .unsupported)
@@ -164,9 +164,9 @@ final class AgentServiceTests: XCTestCase {
     func testUploadAddsObjectAndClosesHandle() throws {
         let handle = try XCTUnwrap(FileHandle(forReadingAtPath: "/dev/null"))
         let (id, error): (UInt32, NSError?) = call { reply in
-            service.upload(parent: 0, name: "w.fit", size: 10, from: handle) { reply(($0, $1)) }
+            service.upload(parent: 0, name: "w.jpg", size: 10, from: handle) { reply(($0, $1)) }
         }
         XCTAssertNil(error)
-        XCTAssertEqual(device.objects[id]?.name, "w.fit")
+        XCTAssertEqual(device.objects[id]?.name, "w.jpg")
     }
 }

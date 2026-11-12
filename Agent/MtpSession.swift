@@ -4,9 +4,6 @@ import os
 
 private let log = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "libmtp")
 
-/// Garmin's USB vendor id; preferred when several MTP devices are attached.
-private let garminVendorID: UInt16 = 0x091E
-
 /// libmtp's "top of storage" parent for listing (`LIBMTP_FILES_AND_FOLDERS_ROOT`).
 private let listRootParent: UInt32 = 0xFFFF_FFFF
 
@@ -23,10 +20,13 @@ private let listRootParent: UInt32 = 0xFFFF_FFFF
 /// tells "device refused" apart from "transport is dead".
 final class MtpSession: MtpDevice {
     private var device: UnsafeMutablePointer<LIBMTP_mtpdevice_t>?
-    /// Storage we browse (the Edge has a single internal storage).
+    /// Storage we browse (the device's first storage).
     private(set) var storageID: UInt32 = 0
     private var name: String?
     private var serial: String?
+    /// USB vendor/product of the last device opened, so a reopen sticks with
+    /// the same device when several are attached.
+    private var lastDevice: (vendor: UInt16, product: UInt16)?
 
     /// Call once per process before any session work.
     static func initializeLibrary() {
@@ -35,8 +35,9 @@ final class MtpSession: MtpDevice {
 
     var isOpen: Bool { device != nil }
 
-    /// Detect and open a connected MTP device (a Garmin one if there are
-    /// several), uncached, and pick its first storage.
+    /// Detect and open a connected MTP device, uncached, and pick its first
+    /// storage. With several devices attached, the one opened last time wins,
+    /// otherwise the first one libmtp reports.
     func open() throws {
         guard device == nil else { return }
 
@@ -51,15 +52,19 @@ final class MtpSession: MtpDevice {
             throw MtpError(.noDevice, "No MTP device detected on USB.")
         }
         let candidates = (0..<Int(count)).map { raws + $0 }
+        let previous = lastDevice
+        let raw = candidates.first {
+            $0.pointee.device_entry.vendor_id == previous?.vendor
+                && $0.pointee.device_entry.product_id == previous?.product
+        } ?? candidates[0]
         if count > 1 {
-            log.warning("\(count) MTP devices attached; preferring a Garmin one")
+            log.warning("\(count) MTP devices attached; only one is shown at a time")
         }
-        let raw = candidates.first { $0.pointee.device_entry.vendor_id == garminVendorID } ?? candidates[0]
 
         guard let dev = LIBMTP_Open_Raw_Device_Uncached(raw) else {
             throw MtpError(.deviceBusy,
-                "Found the device but couldn't open it. Another app (Image Capture, Garmin Express, "
-                + "Android File Transfer, OpenMTP) is probably using it — quit that app and try again.")
+                "Found the device but couldn't open it. Another app is probably using it (Image Capture, "
+                + "Android File Transfer, OpenMTP or the device maker's sync app) — quit that app and try again.")
         }
 
         // Populate dev.pointee.storage.
@@ -67,13 +72,16 @@ final class MtpSession: MtpDevice {
         guard rc != -1, let storage = dev.pointee.storage else {
             LIBMTP_Clear_Errorstack(dev)
             LIBMTP_Release_Device(dev)
-            throw MtpError(.deviceBusy, "The device didn't report any storage. Unlock it or check its USB mode.")
+            throw MtpError(.deviceBusy,
+                "The device didn't report any storage. Unlock it, and on a phone choose “File transfer” "
+                + "in the USB notification.")
         }
         if storage.pointee.next != nil {
             log.warning("device has several storages; only the first is shown")
         }
         storageID = storage.pointee.id
         device = dev
+        lastDevice = (raw.pointee.device_entry.vendor_id, raw.pointee.device_entry.product_id)
         name = Self.takeString(LIBMTP_Get_Friendlyname(dev)).flatMap { $0.isEmpty ? nil : $0 }
             ?? Self.takeString(LIBMTP_Get_Modelname(dev))
         serial = Self.takeString(LIBMTP_Get_Serialnumber(dev))

@@ -89,11 +89,11 @@ struct ContentView: View {
                    detail: "Browse it in Finder's sidebar under Locations, or with “Show in Finder”.")
         case .noDevice:
             Notice(symbol: "cable.connector", tint: .secondary, title: "No device connected",
-                   detail: "Connect your Garmin Edge with a USB data cable and unlock it.")
+                   detail: "Connect an MTP device (phone, camera, GPS, music player…) with a USB data cable and unlock it. On a phone, choose “File transfer” in the USB notification.")
         case .busy(let message):
             Notice(symbol: "hand.raised.fill", tint: .orange, title: "Device is in use by another app",
                    detail: message.isEmpty
-                       ? "Quit Image Capture, Garmin Express, Android File Transfer or OpenMTP, then reconnect."
+                       ? "Quit Image Capture, Android File Transfer, OpenMTP or the device maker's sync app, then reconnect."
                        : message)
         case .agentUnavailable:
             Notice(symbol: "exclamationmark.octagon.fill", tint: .red, title: "The MtpMount helper isn't running",
