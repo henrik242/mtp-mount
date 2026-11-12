@@ -33,7 +33,7 @@ enum FileProviderErrors {
         guard let failure = ns.mtpFailure else { return ns }
         let message = ns.localizedDescription
         switch failure {
-        case .noDevice, .deviceBusy, .disconnected:
+        case .noDevice, .deviceBusy, .disconnected, .notFileDevice:
             return fpError(.serverUnreachable, message, underlying: ns)
         case .noSuchObject:
             return fpError(.noSuchItem, message, underlying: ns)

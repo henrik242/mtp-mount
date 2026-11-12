@@ -8,6 +8,8 @@ final class FakeBus: MtpBus {
     private(set) var openCount = 0
     /// Locations whose open fails as "in use by another app".
     var busy: Set<UInt64> = []
+    /// Locations holding a camera (released at once as "not a file device").
+    var cameras: Set<UInt64> = []
 
     @discardableResult
     func attach(_ device: FakeDevice) -> FakeDevice {
@@ -31,6 +33,7 @@ final class FakeBus: MtpBus {
             throw MtpError(.noDevice, "gone")
         }
         guard !busy.contains(info.location) else { throw MtpError(.deviceBusy, "in use") }
+        guard !cameras.contains(info.location) else { throw MtpError(.notFileDevice, device.name) }
         device.isOpen = true
         device.alive = true
         return device

@@ -4,6 +4,10 @@ import os
 
 private let log = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "libmtp")
 
+/// PTP filesystem type of camera storage ("Design rule for Camera File
+/// system", `PTP_FST_DCF` in libmtp's private ptp.h).
+private let cameraFilesystemType: UInt16 = 0x0003
+
 /// libmtp's "top of storage" parent for listing (`LIBMTP_FILES_AND_FOLDERS_ROOT`).
 private let listRootParent: UInt32 = 0xFFFF_FFFF
 
@@ -78,7 +82,10 @@ final class MtpSession: MtpDevice {
     private let events = EventInbox()
 
     /// Take over an opened device: pick its first storage and start listening
-    /// for events. Releases the device and throws if it reports no storage.
+    /// for events. Releases the device and throws if it reports no storage, or
+    /// if it's a camera (every storage in the camera file system): those are
+    /// for Image Capture / Photos, not a file browser. The check happens before
+    /// event listening starts, so the release is always safe.
     fileprivate init(_ dev: UnsafeMutablePointer<LIBMTP_mtpdevice_t>,
                      onAbandon: @escaping (MtpSession) -> Void) throws {
         self.onAbandon = onAbandon
@@ -90,12 +97,25 @@ final class MtpSession: MtpDevice {
                 "The device didn't report any storage. Unlock it, and on a phone choose “File transfer” "
                 + "in the USB notification.")
         }
+        let deviceName = Self.takeString(LIBMTP_Get_Friendlyname(dev)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? Self.takeString(LIBMTP_Get_Modelname(dev))
+        var hasFileStorage = false
+        var node: UnsafeMutablePointer<LIBMTP_devicestorage_t>? = storage
+        while let current = node {
+            if current.pointee.FilesystemType != cameraFilesystemType { hasFileStorage = true }
+            node = current.pointee.next
+        }
+        guard hasFileStorage else {
+            log.info("\(deviceName ?? "device", privacy: .public) is a camera (DCF storage only); leaving it alone")
+            LIBMTP_Clear_Errorstack(dev)
+            LIBMTP_Release_Device(dev)
+            throw MtpError(.notFileDevice, deviceName ?? "Camera")
+        }
         if storage.pointee.next != nil {
             log.warning("device has several storages; only the first is shown")
         }
         storageID = storage.pointee.id
-        name = Self.takeString(LIBMTP_Get_Friendlyname(dev)).flatMap { $0.isEmpty ? nil : $0 }
-            ?? Self.takeString(LIBMTP_Get_Modelname(dev))
+        name = deviceName
         serial = Self.takeString(LIBMTP_Get_Serialnumber(dev)).flatMap { $0.isEmpty ? nil : $0 }
         device = dev
         LIBMTP_Clear_Errorstack(dev)

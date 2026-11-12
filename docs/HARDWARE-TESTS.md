@@ -50,6 +50,9 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 - [ ] "Forget" on an unplugged device removes its location; it comes back when the device is attached again
 - [ ] With the app closed, attach a never-seen device: its location appears (added by the helper, or by the app launched in the background)
 
+- [ ] An MTP camera (or a phone switched to PTP/"Transfer photos" mode with only DCIM): not opened, listed as "Left to Image Capture", and Image Capture/Photos can import from it
+- [ ] Switch that phone back to "File transfer": it's opened and gets its location
+
 ## Install / uninstall
 - [ ] Upgrading from a build with the old "Garmin Edge" / "MTP Device" location: it is removed and per-device locations appear
 - [ ] Fresh install from the DMG; run from the DMG first: the app warns to move it to Applications

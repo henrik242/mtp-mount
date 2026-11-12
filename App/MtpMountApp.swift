@@ -48,6 +48,12 @@ struct ContentView: View {
 
             problemRow
 
+            if !controller.ignoredDevices.isEmpty {
+                Notice(symbol: "camera", tint: .secondary,
+                       title: "Left to Image Capture: " + controller.ignoredDevices.joined(separator: ", "),
+                       detail: "Cameras are for Photos and Image Capture, so MtpMount doesn't open them.")
+            }
+
             if controller.rows.isEmpty {
                 if controller.checked && controller.problem == .none {
                     Notice(symbol: "cable.connector", tint: .secondary, title: "No device connected",

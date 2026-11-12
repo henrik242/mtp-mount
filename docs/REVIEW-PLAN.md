@@ -77,3 +77,4 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] UI, error messages, README, tests and hardware checklist speak of MTP devices / phones (incl. "File transfer" mode)
 - [x] Changes made on the device while connected (e.g. a new photo on a phone): MTP object-added/removed events → change journal → item-level updates in Finder
 - [x] One Finder location per device (named after it), so several devices can be mounted at once; older shared domains are removed
+- [x] Cameras (all storage in the DCF camera file system) are released right after opening and left to Image Capture/Photos until detached

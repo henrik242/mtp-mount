@@ -155,6 +155,30 @@ final class AgentServiceTests: XCTestCase {
         XCTAssertEqual(list().error?.mtpFailure, .deviceBusy)
     }
 
+    func testCamerasAreLeftAloneUntilDetached() {
+        let camera = bus.attach(FakeDevice(name: "Camera X", serial: "CAM1", location: 3))
+        bus.cameras = [camera.info.location]
+        hotplug()
+        var o = overview()
+        XCTAssertEqual(o.devices.map(\.key), [phone.key], "the phone next to it still opens")
+        XCTAssertEqual(o.ignoredDevices, ["Camera X"])
+        XCTAssertNil(o.problem, "a camera isn't a problem")
+        XCTAssertFalse(changes.contains { if case .opened(let s) = $0 { return s.key == camera.key } else { return false } })
+
+        let opens = bus.openCount
+        hotplug()
+        XCTAssertEqual(bus.openCount, opens, "not opened again while it stays attached")
+
+        bus.detach(camera)
+        hotplug()
+        o = overview()
+        XCTAssertEqual(o.ignoredDevices, [])
+        bus.attach(camera)
+        hotplug()
+        XCTAssertEqual(bus.openCount, opens + 1, "re-checked after being re-attached")
+        XCTAssertEqual(overview().ignoredDevices, ["Camera X"])
+    }
+
     func testOverviewNoticesDeadLink() {
         XCTAssertNotNil(status())
         bus.detach(phone)
