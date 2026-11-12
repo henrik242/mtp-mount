@@ -1,87 +1,97 @@
 import Foundation
-import os
 
 /// Thin XPC client the extension uses to reach the non-sandboxed libmtp agent.
 /// The connection is lazy and self-healing: launchd starts the agent on demand
-/// when we look up its mach service, and we rebuild the connection if it drops.
+/// when we look up its mach service. An *interrupted* connection stays usable
+/// (launchd relaunches the agent on the next message); only an *invalidated*
+/// one is replaced. Every failure is mapped with `FileProviderErrors.map`.
 final class AgentClient {
     static let shared = AgentClient()
 
     private let lock = NSLock()
     private var connection: NSXPCConnection?
 
-    private func proxy(_ onError: @escaping (Error) -> Void) -> MtpAgentXPC? {
+    private func currentConnection() -> NSXPCConnection {
         lock.lock()
-        if connection == nil {
-            let c = NSXPCConnection(machServiceName: MtpAgentConfig.machServiceName, options: [])
-            c.remoteObjectInterface = NSXPCInterface(with: MtpAgentXPC.self)
-            // Only talk to an agent signed by our team (the mach name alone
-            // could be squatted by another process in the user's session).
-            c.setCodeSigningRequirement(MtpAgentConfig.agentRequirement)
-            c.invalidationHandler = { [weak self] in self?.clear() }
-            c.interruptionHandler = { [weak self] in self?.clear() }
-            c.resume()
-            connection = c
-        }
-        let conn = connection
-        lock.unlock()
-        return conn?.remoteObjectProxyWithErrorHandler(onError) as? MtpAgentXPC
+        defer { lock.unlock() }
+        if let connection { return connection }
+        let c = NSXPCConnection(machServiceName: MtpAgentConfig.machServiceName, options: [])
+        c.remoteObjectInterface = NSXPCInterface(with: MtpAgentXPC.self)
+        // Only talk to an agent signed by our team (the mach name alone
+        // could be squatted by another process in the user's session).
+        c.setCodeSigningRequirement(MtpAgentConfig.agentRequirement)
+        c.invalidationHandler = { [weak self, weak c] in self?.forget(c) }
+        c.resume()
+        connection = c
+        return c
     }
 
-    private func clear() {
+    /// Drop `c` if it's still the current connection (a late invalidation of an
+    /// old connection must not discard a newer one).
+    private func forget(_ c: NSXPCConnection?) {
         lock.lock()
-        connection = nil
-        lock.unlock()
+        defer { lock.unlock() }
+        if let c, connection === c { connection = nil }
+    }
+
+    private func proxy(_ onError: @escaping (Error) -> Void) -> MtpAgentXPC? {
+        let p = currentConnection().remoteObjectProxyWithErrorHandler { onError(FileProviderErrors.map($0)) }
+        guard let agent = p as? MtpAgentXPC else {
+            onError(fpError(.serverUnreachable, "Couldn't reach the MtpMount helper."))
+            return nil
+        }
+        return agent
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, _ data: Data?, _ error: NSError?) -> Result<T, Error> {
+        if let error { return .failure(FileProviderErrors.map(error)) }
+        do {
+            return .success(try JSONDecoder().decode(T.self, from: data ?? Data()))
+        } catch {
+            return .failure(fpError(.cannotSynchronize, "Malformed reply from the helper.", underlying: error))
+        }
     }
 
     // MARK: - Calls
 
+    func status(completion: @escaping (Result<AgentStatus, Error>) -> Void) {
+        proxy { completion(.failure($0)) }?.status { data in
+            completion(Self.decode(AgentStatus.self, data, nil))
+        }
+    }
+
     func list(parent: UInt32, completion: @escaping (Result<[MtpEntry], Error>) -> Void) {
-        guard let p = proxy({ completion(.failure($0)) }) else {
-            completion(.failure(Self.err("no connection"))); return
-        }
-        p.list(parent: parent) { data, errMsg in
-            if let errMsg { completion(.failure(Self.err(errMsg))); return }
-            do {
-                completion(.success(try JSONDecoder().decode([MtpEntry].self, from: data ?? Data())))
-            } catch { completion(.failure(error)) }
+        proxy { completion(.failure($0)) }?.list(parent: parent) { data, error in
+            completion(Self.decode([MtpEntry].self, data, error))
         }
     }
 
-    /// nil entry means the object no longer exists on the device.
-    func item(objectID: UInt32, completion: @escaping (Result<MtpEntry?, Error>) -> Void) {
-        guard let p = proxy({ completion(.failure($0)) }) else {
-            completion(.failure(Self.err("no connection"))); return
-        }
-        p.item(objectID: objectID) { data, errMsg in
-            if let errMsg { completion(.failure(Self.err(errMsg))); return }
-            guard let data else { completion(.success(nil)); return }
-            do {
-                completion(.success(try JSONDecoder().decode(MtpEntry.self, from: data)))
-            } catch { completion(.failure(error)) }
+    /// Fails with `.noSuchItem` if the object no longer exists on the device.
+    func item(objectID: UInt32, completion: @escaping (Result<MtpEntry, Error>) -> Void) {
+        proxy { completion(.failure($0)) }?.item(objectID: objectID) { data, error in
+            completion(Self.decode(MtpEntry.self, data, error))
         }
     }
 
-    /// Download `objectID` into a fresh temp file (owned by the extension) and
-    /// return its URL. The extension passes the open fd to the agent over XPC.
-    func fetch(objectID: UInt32, completion: @escaping (Result<URL, Error>) -> Void) {
-        let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mtp-\(objectID)-\(UUID().uuidString)")
+    /// Download `objectID` into a fresh file in `directory` (owned by the
+    /// extension) and return its URL. The extension passes the open fd to the
+    /// agent over XPC. The file is removed on any failure.
+    func fetch(objectID: UInt32, into directory: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+        let dest = directory.appendingPathComponent("mtp-\(objectID)-\(UUID().uuidString)")
         guard FileManager.default.createFile(atPath: dest.path, contents: nil),
               let handle = try? FileHandle(forWritingTo: dest) else {
-            completion(.failure(Self.err("could not create temp file"))); return
+            completion(.failure(fpError(.cannotSynchronize, "Couldn't create a temporary file.")))
+            return
         }
-        guard let p = proxy({ try? handle.close(); completion(.failure($0)) }) else {
-            try? handle.close(); completion(.failure(Self.err("no connection"))); return
-        }
-        p.fetch(objectID: objectID, into: handle) { errMsg in
+        let fail: (Error) -> Void = { error in
             try? handle.close()
-            if let errMsg {
-                try? FileManager.default.removeItem(at: dest)
-                completion(.failure(Self.err(errMsg)))
-            } else {
-                completion(.success(dest))
-            }
+            try? FileManager.default.removeItem(at: dest)
+            completion(.failure(error))
+        }
+        proxy(fail)?.fetch(objectID: objectID, into: handle) { error in
+            if let error { fail(FileProviderErrors.map(error)); return }
+            try? handle.close()
+            completion(.success(dest))
         }
     }
 
@@ -90,55 +100,44 @@ final class AgentClient {
     /// Upload a local file as a new object under `parent`. Returns the new MTP id.
     func upload(parent: UInt32, name: String, source: URL,
                 completion: @escaping (Result<UInt32, Error>) -> Void) {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: source.path)
-        let size = (attrs?[.size] as? UInt64) ?? 0
+        let size = ((try? FileManager.default.attributesOfItem(atPath: source.path))?[.size] as? UInt64) ?? 0
         guard let handle = try? FileHandle(forReadingFrom: source) else {
-            completion(.failure(Self.err("cannot open source file"))); return
+            completion(.failure(fpError(.cannotSynchronize, "Couldn't read the file to upload.")))
+            return
         }
-        guard let p = proxy({ try? handle.close(); completion(.failure($0)) }) else {
-            try? handle.close(); completion(.failure(Self.err("no connection"))); return
-        }
-        p.upload(parent: parent, name: name, size: size, from: handle) { newID, errMsg in
+        let fail: (Error) -> Void = { error in
             try? handle.close()
-            if let errMsg { completion(.failure(Self.err(errMsg))) }
-            else { completion(.success(newID)) }
+            completion(.failure(error))
+        }
+        proxy(fail)?.upload(parent: parent, name: name, size: size, from: handle) { newID, error in
+            if let error { fail(FileProviderErrors.map(error)); return }
+            try? handle.close()
+            completion(.success(newID))
         }
     }
 
     func createFolder(parent: UInt32, name: String,
                       completion: @escaping (Result<UInt32, Error>) -> Void) {
-        guard let p = proxy({ completion(.failure($0)) }) else {
-            completion(.failure(Self.err("no connection"))); return
-        }
-        p.createFolder(parent: parent, name: name) { newID, errMsg in
-            if let errMsg { completion(.failure(Self.err(errMsg))) }
-            else { completion(.success(newID)) }
+        proxy { completion(.failure($0)) }?.createFolder(parent: parent, name: name) { newID, error in
+            if let error { completion(.failure(FileProviderErrors.map(error))) } else { completion(.success(newID)) }
         }
     }
 
-    func delete(objectID: UInt32, completion: @escaping (Error?) -> Void) {
-        guard let p = proxy({ completion($0) }) else { completion(Self.err("no connection")); return }
-        p.delete(objectID: objectID) { errMsg in
-            completion(errMsg.map { Self.err($0) })
+    func delete(objectID: UInt32, recursive: Bool, completion: @escaping (Error?) -> Void) {
+        proxy { completion($0) }?.delete(objectID: objectID, recursive: recursive) { error in
+            completion(error.map { FileProviderErrors.map($0) })
         }
     }
 
     func rename(objectID: UInt32, to newName: String, completion: @escaping (Error?) -> Void) {
-        guard let p = proxy({ completion($0) }) else { completion(Self.err("no connection")); return }
-        p.rename(objectID: objectID, to: newName) { errMsg in
-            completion(errMsg.map { Self.err($0) })
+        proxy { completion($0) }?.rename(objectID: objectID, to: newName) { error in
+            completion(error.map { FileProviderErrors.map($0) })
         }
     }
 
     func move(objectID: UInt32, toParent newParent: UInt32, completion: @escaping (Error?) -> Void) {
-        guard let p = proxy({ completion($0) }) else { completion(Self.err("no connection")); return }
-        p.move(objectID: objectID, toParent: newParent) { errMsg in
-            completion(errMsg.map { Self.err($0) })
+        proxy { completion($0) }?.move(objectID: objectID, toParent: newParent) { error in
+            completion(error.map { FileProviderErrors.map($0) })
         }
-    }
-
-    private static func err(_ message: String) -> NSError {
-        NSError(domain: "no.synth.mtpmount.agent", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: message])
     }
 }

@@ -16,6 +16,14 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
 
     func invalidate() {}
 
+    /// Where downloads are staged: the domain's own temporary directory (on the
+    /// same volume as the replicated files, so the system can move rather than
+    /// copy), falling back to the sandbox temp dir.
+    var temporaryDirectory: URL {
+        (try? NSFileProviderManager(for: domain)?.temporaryDirectoryURL())
+            ?? FileManager.default.temporaryDirectory
+    }
+
     // MARK: - Metadata
 
     func item(for identifier: NSFileProviderItemIdentifier,
@@ -32,10 +40,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         }
         AgentClient.shared.item(objectID: objectID) { result in
             switch result {
-            case .success(let entry?):
+            case .success(let entry):
                 completionHandler(FileProviderItem(entry: entry), nil)
-            case .success(nil):
-                completionHandler(nil, fpError(.noSuchItem))
             case .failure(let error):
                 completionHandler(nil, error)
             }
@@ -59,10 +65,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             switch itemResult {
             case .failure(let error):
                 completionHandler(nil, nil, error)
-            case .success(nil):
-                completionHandler(nil, nil, fpError(.noSuchItem))
-            case .success(let entry?):
-                AgentClient.shared.fetch(objectID: objectID) { fetchResult in
+            case .success(let entry):
+                AgentClient.shared.fetch(objectID: objectID, into: self.temporaryDirectory) { fetchResult in
                     switch fetchResult {
                     case .success(let url):
                         completionHandler(url, FileProviderItem(entry: entry), nil)
@@ -146,9 +150,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         let finish: () -> Void = {
             AgentClient.shared.item(objectID: objectID) { result in
                 switch result {
-                case .success(let entry?): completionHandler(FileProviderItem(entry: entry), [], false, nil)
-                case .success(nil):        completionHandler(nil, [], false, fpError(.noSuchItem))
-                case .failure(let e):      completionHandler(nil, [], false, e)
+                case .success(let entry): completionHandler(FileProviderItem(entry: entry), [], false, nil)
+                case .failure(let e):     completionHandler(nil, [], false, e)
                 }
             }
         }
@@ -183,14 +186,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             completionHandler(fpError(.noSuchItem))
             return Progress()
         }
-        AgentClient.shared.delete(objectID: objectID) { err in
+        AgentClient.shared.delete(objectID: objectID, recursive: options.contains(.recursive)) { err in
             completionHandler(err)
         }
         return Progress()
     }
-}
-
-/// Build an NSFileProvider error without relying on the throwing bridged initializer.
-func fpError(_ code: NSFileProviderError.Code) -> NSError {
-    NSError(domain: NSFileProviderErrorDomain, code: code.rawValue)
 }
