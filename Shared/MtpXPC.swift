@@ -113,6 +113,26 @@ enum MtpAgentConfig {
     /// Launch argument that makes the app add domains for attached devices
     /// and quit (used by the agent when it may not add domains itself).
     static let syncDomainsArgument = "--sync-domains"
+    /// The helper's MTP implementation, chosen by `--backend <name>`.
+    enum Backend: String, CaseIterable {
+        /// Our own PTP/MTP over IOUSBHost.
+        case native
+        /// libmtp + libusb.
+        case libmtp
+
+        static let argument = "--backend"
+        static let `default` = Backend.libmtp
+
+        init(arguments: [String]) {
+            if let i = arguments.firstIndex(of: Self.argument), i + 1 < arguments.count,
+               let backend = Backend(rawValue: arguments[i + 1]) {
+                self = backend
+            } else {
+                self = .default
+            }
+        }
+    }
+
     /// File name of the helper executable in Contents/MacOS.
     static let agentExecutable = "mtpmount-agent"
     /// launchd job label for the helper agent.

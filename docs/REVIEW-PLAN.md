@@ -78,3 +78,9 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] Changes made on the device while connected (e.g. a new photo on a phone): MTP object-added/removed events → change journal → item-level updates in Finder
 - [x] One Finder location per device (named after it), so several devices can be mounted at once; older shared domains are removed
 - [x] Cameras (all storage in the DCF camera file system) are released right after opening and left to Image Capture/Photos until detached
+
+## Licensing & native MTP
+- [x] App licensed GPL-2.0-or-later; LGPL notices for bundled libmtp/libusb shipped in the app and the DMG
+- [x] Native PTP/MTP implementation over IOUSBHost (`--backend native`), selectable in the app; libmtp stays the default until it's verified on hardware
+- [ ] Make the native backend the default and drop libmtp/libusb (after hardware tests on a phone and a GPS)
+- [x] libmtp path: create files/folders at the root with parent 0xFFFFFFFF (Android rejects 0)
