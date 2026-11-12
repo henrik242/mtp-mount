@@ -100,6 +100,19 @@ xcrun stapler staple "$APP"
 `spctl -a -vvv --type exec "$APP"` should then report *accepted / Notarized
 Developer ID*.
 
+### Distributable DMG
+
+`scripts/make-dmg.sh` wraps the (already notarized) app in a compressed DMG with
+an `/Applications` drag-install target, signs it, and — with `--notarize` —
+notarizes and staples the DMG too:
+
+```sh
+scripts/make-dmg.sh "$APP" dist/MtpMount-0.1.0.dmg --notarize
+```
+
+The result passes `spctl -a -t open --context context:primary-signature` and is
+ready to hand out.
+
 ## Signing notes
 
 Uses Developer ID manual signing (team `358L7UXVJ4`) against provisioning profiles
