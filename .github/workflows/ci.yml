@@ -2,13 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write # create/attach release assets on tags
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,11 +22,13 @@ jobs:
   # Compile check on every push/PR. No secrets, no signing.
   build:
     name: Build (unsigned compile check)
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
         run: brew install xcodegen libmtp
+      - name: Toolchain
+        run: xcodebuild -version && sw_vers
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Build (signing disabled)
@@ -61,7 +63,9 @@ jobs:
     name: Signed notarized DMG
     needs: [build, gate]
     if: needs.gate.outputs.release == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
+    permissions:
+      contents: write # create/attach release assets
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
