@@ -1,6 +1,8 @@
 import FileProvider
+import os
 
-/// Enumerates the children of one container identifier.
+/// Enumerates the children of one container by asking the agent to list the
+/// matching MTP folder on demand.
 final class Enumerator: NSObject, NSFileProviderEnumerator {
     private let container: NSFileProviderItemIdentifier
 
@@ -12,23 +14,34 @@ final class Enumerator: NSObject, NSFileProviderEnumerator {
 
     func enumerateItems(for observer: NSFileProviderEnumerationObserver,
                         startingAt page: NSFileProviderPage) {
-        // The working set is used for offline / search. Keep it empty for now.
+        // Working set (offline/spotlight) stays empty for a read-only, on-demand mount.
         if container == .workingSet {
             observer.finishEnumerating(upTo: nil)
             return
         }
-        let items = FakeTree.children(of: container).map { FileProviderItem($0) }
-        observer.didEnumerate(items)
-        observer.finishEnumerating(upTo: nil)
+        guard let parent = MtpID.listParent(for: container) else {
+            observer.finishEnumerating(upTo: nil)
+            return
+        }
+        AgentClient.shared.list(parent: parent) { result in
+            switch result {
+            case .success(let entries):
+                observer.didEnumerate(entries.map { FileProviderItem(entry: $0) })
+                observer.finishEnumerating(upTo: nil)
+            case .failure(let error):
+                extLog.error("enumerate \(self.container.rawValue, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                observer.finishEnumeratingWithError(error)
+            }
+        }
     }
 
     func enumerateChanges(for observer: NSFileProviderChangeObserver,
                           from anchor: NSFileProviderSyncAnchor) {
-        // Static tree: nothing ever changes.
+        // No push from the device; re-enumeration is driven by signalEnumerator.
         observer.finishEnumeratingChanges(upTo: anchor, moreComing: false)
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        completionHandler(NSFileProviderSyncAnchor(Data("anchor-v1".utf8)))
+        completionHandler(NSFileProviderSyncAnchor(Data("v1".utf8)))
     }
 }

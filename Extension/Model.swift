@@ -1,55 +1,31 @@
 import Foundation
 import FileProvider
 
-/// A single node in the (currently static) tree the extension serves.
-struct Node {
-    let id: NSFileProviderItemIdentifier
-    let parent: NSFileProviderItemIdentifier
-    let name: String
-    let isFolder: Bool
-    let size: Int
-}
+/// Maps between File Provider item identifiers (strings) and MTP object ids (UInt32).
+///
+/// - `.rootContainer` ⇄ the top of the device storage (`rootParent`).
+/// - every other item ⇄ its decimal MTP object id, e.g. "16".
+enum MtpID {
+    /// libmtp's storage-root sentinel (0xFFFFFFFF); such a parent means top level.
+    static let storageRootSentinel: UInt32 = 0xFFFF_FFFF
 
-/// Phase 0: a fixed, in-memory tree so we can prove the File Provider pipeline
-/// (domain registration, enumeration, content fetch) before wiring up MTP.
-/// Phase 1 replaces this with data from the libmtp agent.
-enum FakeTree {
-    static let activities = NSFileProviderItemIdentifier("Activities")
-    static let ride1 = NSFileProviderItemIdentifier("Activities/2026-11-10-073000.fit")
-    static let ride2 = NSFileProviderItemIdentifier("Activities/2026-11-11-181500.fit")
-    static let readme = NSFileProviderItemIdentifier("README.txt")
-
-    static let nodes: [NSFileProviderItemIdentifier: Node] = [
-        .rootContainer: Node(id: .rootContainer, parent: .rootContainer,
-                             name: "Garmin", isFolder: true, size: 0),
-        activities: Node(id: activities, parent: .rootContainer,
-                         name: "Activities", isFolder: true, size: 0),
-        ride1: Node(id: ride1, parent: activities,
-                    name: "2026-11-10-073000.fit", isFolder: false, size: 4096),
-        ride2: Node(id: ride2, parent: activities,
-                    name: "2026-11-11-181500.fit", isFolder: false, size: 8192),
-        readme: Node(id: readme, parent: .rootContainer,
-                     name: "README.txt", isFolder: false, size: 128),
-    ]
-
-    static func node(_ id: NSFileProviderItemIdentifier) -> Node? {
-        nodes[id]
+    /// The MTP parent to list for a given container identifier, or nil if the
+    /// identifier isn't a browsable MTP container.
+    static func listParent(for id: NSFileProviderItemIdentifier) -> UInt32? {
+        if id == .rootContainer { return MtpAgentConfig.rootParent }
+        return UInt32(id.rawValue)
     }
 
-    static func children(of parent: NSFileProviderItemIdentifier) -> [Node] {
-        nodes.values
-            .filter { $0.parent == parent && $0.id != parent }
-            .sorted { $0.name < $1.name }
+    /// Identifier for an MTP object id.
+    static func identifier(forObject objectID: UInt32) -> NSFileProviderItemIdentifier {
+        NSFileProviderItemIdentifier(rawValue: "\(objectID)")
     }
 
-    /// Deterministic placeholder bytes so a copied file has real content.
-    static func contents(of node: Node) -> Data {
-        if node.id == readme {
-            let text = "Garmin MTP Mount — Phase 0 test tree.\nNo device is connected yet.\n"
-            return Data(text.utf8)
+    /// Identifier for an entry's parent, folding top-level parents to the root.
+    static func parentIdentifier(forParent parentID: UInt32) -> NSFileProviderItemIdentifier {
+        if parentID == MtpAgentConfig.rootParent || parentID == storageRootSentinel {
+            return .rootContainer
         }
-        var data = Data(capacity: node.size)
-        for i in 0..<node.size { data.append(UInt8(i & 0xFF)) }
-        return data
+        return identifier(forObject: parentID)
     }
 }

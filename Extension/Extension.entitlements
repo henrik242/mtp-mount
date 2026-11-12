@@ -12,5 +12,9 @@
     <array>
         <string>358L7UXVJ4.no.synth.mtpmount</string>
     </array>
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>358L7UXVJ4.no.synth.mtpmount.helper</string>
+    </array>
 </dict>
 </plist>
