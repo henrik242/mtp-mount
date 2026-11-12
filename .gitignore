@@ -5,7 +5,9 @@ MtpMount.xcodeproj/
 build/
 build-release/
 DerivedData/
+dist/
 *.zip
+*.dmg
 
 # macOS
 .DS_Store
