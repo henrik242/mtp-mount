@@ -2,8 +2,50 @@
 
 Mount a Garmin Edge (e.g. Edge 1040) — which exposes its storage over **MTP over
 USB** — as a browsable macOS volume, using Apple's **File Provider** API. No kernel
-extension, no reboot: the device appears under `~/Library/CloudStorage/` and in
-Finder's sidebar, and is usable from the Terminal (`ls`, `cp`, `rsync`).
+extension, no reboot: the device appears in Finder's sidebar (under Locations)
+and under `~/Library/CloudStorage/`, and is usable from the Terminal (`ls`, `cp`,
+`rsync`).
+
+Requires an Apple Silicon Mac on the latest macOS.
+
+## Quick start
+
+1. Download the latest `MtpMount-x.y.z.dmg` from the
+   [Releases](../../releases) page, open it and drag **MtpMount** to
+   **Applications**. (It must run from Applications.)
+2. Open MtpMount from Applications. It installs a small helper and adds the
+   "Garmin Edge" location.
+3. If the window says so, turn on the extension: **System Settings → General →
+   Login Items & Extensions → File Providers → MtpMount** (the window has a
+   button that opens the right page).
+4. Connect the Edge with a USB data cable. The window shows **Connected**, and
+   the device appears in Finder's sidebar. "Show in Finder" opens it.
+
+You can copy files off the device (activities live in `Garmin/Activity`), copy
+courses/workouts onto it (e.g. `Garmin/NewFiles`), and create, rename, move and
+delete files and folders. Editing a file in place on the device isn't
+possible (MTP has no partial writes): copy it to your Mac, edit it, copy it back.
+
+### Troubleshooting
+
+- **"Device is in use by another app"** — macOS and other tools grab MTP
+  devices. Quit Garmin Express, Android File Transfer and OpenMTP. If Image
+  Capture or Photos opens when you plug in the Edge, open Image Capture, select
+  the device and set "Connecting this device opens" to **No application**.
+  Then unplug and reconnect.
+- **"No device connected"** although it's plugged in — use a data cable (not a
+  charge-only one), unlock the device, and try another port/cable.
+- **The location doesn't appear in Finder** — make sure the extension is
+  enabled (step 3), then use **Troubleshooting → Reset** in the window.
+- **"The MtpMount helper isn't running"** — **Troubleshooting → Reinstall helper**.
+- **Finder shows stale contents** — **Troubleshooting → Refresh Finder**.
+
+### Uninstall
+
+Open MtpMount, choose **Troubleshooting → Uninstall…**, then move MtpMount to
+the Trash. (That removes the helper's LaunchAgent,
+`~/Library/LaunchAgents/no.synth.mtpmount.helper.plist`, and the Finder
+location.)
 
 ## Status
 
@@ -44,14 +86,24 @@ refuses to let an app register a non-sandboxed helper.)
 The helper reads MTP folders on demand (`LIBMTP_Get_Files_And_Folders`, uncached)
 for enumeration, and for a file download streams
 `LIBMTP_Get_File_To_File_Descriptor` into a file descriptor the sandboxed
-extension passes over XPC.
+extension passes over XPC (uploads work the same way in reverse), with byte
+progress and cancellation carried by `NSProgress` across the connection.
+
+MTP object handles are only valid within one USB session, so the File Provider
+sync anchor is the device's serial plus a session id. The helper watches USB
+hotplug (IOKit) and, whenever its session opens or is lost, signals the
+system, which then re-enumerates. Operations that change an existing item
+first check it still matches the version Finder based the change on.
 
 ## Build
 
-Requires Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install
-xcodegen`), **libmtp** (`brew install libmtp`), and an Apple Developer account
-signed into Xcode. The helper currently links Homebrew's libmtp at
-`/opt/homebrew/opt/libmtp/lib/libmtp.9.dylib`.
+Requires an Apple Silicon Mac with the latest Xcode,
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`),
+**libmtp** (`brew install libmtp`), and an Apple Developer account signed into
+Xcode. The helper links Homebrew's libmtp from `/opt/homebrew/lib` (the release
+packaging bundles it). The deployment target equals the macOS that Homebrew's
+bottles were built for; `scripts/bundle-and-sign.sh` refuses to package dylibs
+that need a newer macOS than the app claims.
 
 ```sh
 xcodegen generate
@@ -69,10 +121,12 @@ open /Applications/MtpMount.app                                # registers the d
 ```
 
 Then **enable the extension**: System Settings → General → Login Items &
-Extensions → turn on the MtpMount / "GarminEdge" File Provider. (Apps installed
-outside the App Store register their providers disabled, pending approval.)
+Extensions → File Providers → MtpMount. (Apps installed outside the App Store
+register their providers disabled, pending approval.)
 
-The volume then appears at `~/Library/CloudStorage/MtpMount-GarminEdge`.
+The volume then appears in Finder's sidebar and under `~/Library/CloudStorage/`.
+Debug builds sign the helper with `Agent/Agent-Debug.entitlements`, which turns
+off library validation so it can load Homebrew's libmtp.
 
 ## Packaging & notarization
 
@@ -128,8 +182,10 @@ Required repository secrets for the release job:
 | `NOTARY_KEY_P8_BASE64` | base64 of the ASC API key (`.p8`) |
 | `NOTARY_KEY_ID` / `NOTARY_ISSUER` | ASC API key id and issuer UUID |
 
-Base64 a file with `base64 -i file -o -` (or `base64 < file`). GitHub's runners
-are Apple Silicon, so Homebrew lives at `/opt/homebrew` as the project expects.
+Base64 a file with `base64 -i file -o -` (or `base64 < file`). The jobs run on
+the latest Apple Silicon runner (`macos-26`), so Homebrew lives at
+`/opt/homebrew` as the project expects. Bumping the runner means bumping the
+deployment target in `project.yml` to match.
 
 ## Signing notes
 
@@ -140,15 +196,8 @@ Developer ID signing without a profile fails. The container app is **not**
 sandboxed (so it can install the helper LaunchAgent directly); only the extension
 is sandboxed, as the system requires. A different developer/team must change the
 team id and `no.synth.mtpmount*` bundle ids in `project.yml`, the `*.entitlements`
-files, and `Shared/*.swift`. See the project memory for the full list of
-non-obvious requirements.
+files, and `Shared/*.swift` (`MtpAgentConfig.teamID`).
 
-## Signing notes
-
-Uses Developer ID manual signing (team `358L7UXVJ4`) against provisioning profiles
-created via the App Store Connect API. A File Provider extension **requires**
-provisioning profiles (for `com.apple.application-identifier`); bare
-Developer ID signing without a profile fails. The container app is **not**
-sandboxed (so it can install the helper LaunchAgent directly); only the extension
-is sandboxed, as the system requires. See the project memory for the full list of
-non-obvious requirements.
+The helper only accepts XPC connections from the extension and the app signed
+by this team (and the extension only talks to a helper signed by it), so
+unsigned or differently-signed local builds can't talk to each other.

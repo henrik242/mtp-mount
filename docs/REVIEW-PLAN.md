@@ -25,7 +25,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] 8. `modifyItem`: content edits / unknown parents (Trash) are rejected instead of silently "succeeding"; `baseVersion` checked
 - [x] 9. `createItem` returns the device's real metadata; honours `.mayAlreadyExist`; refuses duplicate names
 - [x] 10. dylib/OS mismatch: deployment target = runner OS; bundle script verifies arm64 + `minos`
-- [ ] 11. "Device in use by another app" detected and reported clearly (agent, Finder error, app UI, README)
+- [x] 11. "Device in use by another app" detected and reported clearly (agent, Finder error, app UI, README)
 
 ## Medium
 - [x] `createFolder` passes a `strdup` copy to libmtp (no UB)
@@ -36,7 +36,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] Detection of an absent device is rate-limited (no USB probe storm)
 - [x] `launchctl` runs off the main actor and reads the pipe before waiting
 - [x] AgentClient: interruption keeps the connection; invalidation only clears the matching connection; temp file removed on XPC error; temp files go in the domain's temporary directory
-- [ ] LaunchAgent plist is rewritten + re-bootstrapped when the app has moved; warn when not run from /Applications
+- [x] LaunchAgent plist is rewritten + re-bootstrapped when the app has moved; warn when not run from /Applications
 - [x] `disable-library-validation` only in Debug (release agent signed without it)
 - [x] Scripts: `.appex` lookup can't silently exit under `pipefail`; libusb resolved robustly; `make-dmg.sh` parses flags properly, uses `ditto`, fails on Gatekeeper rejection when notarizing
 - [x] Provisioning profiles installed where current Xcode looks for them
@@ -47,23 +47,23 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 ## Low / cleanup
 - [x] Root item is not deletable/renamable/movable
 - [x] Packages/symlinks → "unsupported" instead of `.noSuchItem`
-- [ ] Dead code removed (`download(id:to:)`, `cloudStoragePath`, duplicate app-group + `rootParent` constants)
-- [ ] Stale comments ("read-only phase", app-group drop, `status` doc) fixed
-- [ ] `project.yml` duplicates removed; stale SMAppService comment corrected
+- [x] Dead code removed (`download(id:to:)`, `cloudStoragePath`, duplicate app-group + `rootParent` constants)
+- [x] Stale comments ("read-only phase", app-group drop, `status` doc) fixed
+- [x] `project.yml` duplicates removed; stale SMAppService comment corrected
 - [x] Agent boilerplate collapsed into one helper
-- [ ] Hard-coded "Garmin Edge" root name uses `FP.domainDisplayName`; team ID / subsystem in one place
+- [x] Hard-coded "Garmin Edge" root name uses `FP.domainDisplayName`; team ID / subsystem in one place
 - [x] Force-unwraps of `error!` removed
 - [ ] *deferred* — pin GitHub Actions by SHA
 - [ ] *deferred* — localization (`.xcstrings`)
 - [ ] *won't fix (needs hardware)* — libmtp timestamp timezone interpretation
 
 ## UX
-- [ ] App shows device state (connected / no device / in use by another app / agent not running) with a next step
-- [ ] Extension-disabled detection with a button to open Login Items & Extensions settings
-- [ ] Debug buttons moved under "Troubleshooting"; "Show in Finder" opens the device folder
-- [ ] Uninstall action (boots out agent, removes plist + domain)
-- [ ] One product name everywhere; SF Symbols with accessibility labels instead of "✓"
-- [ ] README: end-user quick start, troubleshooting (incl. Image Capture), uninstall; duplicate section removed
+- [x] App shows device state (connected / no device / in use by another app / agent not running) with a next step
+- [x] Extension-disabled detection with a button to open Login Items & Extensions settings
+- [x] Debug buttons moved under "Troubleshooting"; "Show in Finder" opens the device folder
+- [x] Uninstall action (boots out agent, removes plist + domain)
+- [x] One product name everywhere; SF Symbols with accessibility labels instead of "✓"
+- [x] README: end-user quick start, troubleshooting (incl. Image Capture), uninstall; duplicate section removed
 
 ## Testing
 - [ ] Unit-test target (pure logic: ID mapping, items/versions, error mapping, sync anchors, error classification)
