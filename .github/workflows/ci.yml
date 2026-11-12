@@ -39,6 +39,22 @@ jobs:
             CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" \
             DEVELOPMENT_TEAM="" \
             build
+      - name: Unit tests
+        run: |
+          xcodebuild -project MtpMount.xcodeproj -scheme MtpMount \
+            -configuration Debug -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM="" \
+            -only-testing:MtpMountTests \
+            test
+
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck scripts/*.sh
 
   # Decide whether the signed release job should run: only on a v* tag AND only
   # when the signing secret is configured (so forks/PRs never attempt it).
@@ -61,7 +77,7 @@ jobs:
   # Signed + notarized DMG, attached to the GitHub Release. Uses secrets.
   release:
     name: Signed notarized DMG
-    needs: [build, gate]
+    needs: [build, shellcheck, gate]
     if: needs.gate.outputs.release == 'true'
     runs-on: macos-26
     permissions:

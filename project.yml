@@ -36,6 +36,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: App/App.entitlements
         GENERATE_INFOPLIST_FILE: NO
         PROVISIONING_PROFILE_SPECIFIER: "MtpMount App DevID"
+    scheme:
+      testTargets: [MtpMountTests]
     dependencies:
       - target: MtpMountFileProvider
         embed: true
@@ -93,3 +95,28 @@ targets:
         Debug:
           # Unbundled debug helper loads Homebrew's libmtp (other team's signature).
           CODE_SIGN_ENTITLEMENTS: Agent/Agent-Debug.entitlements
+
+  # Logic tests: compiles the platform-independent sources directly (no host
+  # app, no libmtp) and drives AgentService against an in-memory FakeDevice.
+  MtpMountTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+      - Shared/MtpXPC.swift
+      - Agent/MtpDevice.swift
+      - Agent/AgentService.swift
+      - Extension/Model.swift
+      - Extension/FileProviderItem.swift
+      - Extension/ErrorMapping.swift
+      - Extension/FileProviderExtension.swift
+      - Extension/AgentClient.swift
+      - Extension/Enumerator.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: no.synth.mtpmount.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: NO
+        PROVISIONING_PROFILE_SPECIFIER: ""

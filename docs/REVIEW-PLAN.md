@@ -66,7 +66,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] README: end-user quick start, troubleshooting (incl. Image Capture), uninstall; duplicate section removed
 
 ## Testing
-- [ ] Unit-test target (pure logic: ID mapping, items/versions, error mapping, sync anchors, error classification)
-- [ ] Agent depends on an `MtpDevice` protocol; in-memory fake device tests for session recovery / error-drop policy / recursive delete
-- [ ] CI runs the tests and `shellcheck`
-- [ ] Manual hardware checklist (`docs/HARDWARE-TESTS.md`)
+- [x] Unit-test target (pure logic: ID mapping, items/versions, error mapping, sync anchors, error classification)
+- [x] Agent depends on an `MtpDevice` protocol; in-memory fake device tests for session recovery / error-drop policy / recursive delete
+- [x] CI runs the tests and `shellcheck`
+- [x] Manual hardware checklist (`docs/HARDWARE-TESTS.md`)
