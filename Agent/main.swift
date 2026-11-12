@@ -175,6 +175,9 @@ log.info("garmin-mtp-agent starting; vending \(MtpAgentConfig.machServiceName, p
 
 let delegate = ListenerDelegate()
 let listener = NSXPCListener(machServiceName: MtpAgentConfig.machServiceName)
+// Reject any peer that isn't our team-signed extension or app before the
+// delegate ever sees it.
+listener.setConnectionCodeSigningRequirement(MtpAgentConfig.clientRequirement)
 listener.delegate = delegate
 listener.resume()
 

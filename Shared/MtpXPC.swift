@@ -18,6 +18,8 @@ struct MtpEntry: Codable, Equatable {
 /// and the sandboxed File Provider extension. Foundation-only on purpose so the
 /// command-line agent target doesn't have to link FileProvider.
 enum MtpAgentConfig {
+    /// Apple Developer team that signs every component.
+    static let teamID = "358L7UXVJ4"
     /// launchd job label for the helper agent.
     static let agentLabel = "no.synth.mtpmount.helper"
     /// launchd-registered mach service the agent vends and the extension looks up.
@@ -28,6 +30,23 @@ enum MtpAgentConfig {
     static let appGroup = "358L7UXVJ4.no.synth.mtpmount"
     /// Sentinel parent id meaning "top of storage".
     static let rootParent: UInt32 = 0
+
+    /// Bundle identifiers allowed to talk to the agent: the File Provider
+    /// extension and the container app (for device status).
+    static let clientIdentifiers = ["no.synth.mtpmount.fileprovider", "no.synth.mtpmount"]
+
+    /// Code-signing requirement the agent enforces on incoming XPC connections.
+    /// The agent is unsandboxed and owns the USB device, so only our own
+    /// team-signed extension/app may drive it.
+    static var clientRequirement: String {
+        let ids = clientIdentifiers.map { "identifier \"\($0)\"" }.joined(separator: " or ")
+        return "anchor apple generic and certificate leaf[subject.OU] = \"\(teamID)\" and (\(ids))"
+    }
+
+    /// Requirement the client enforces on the agent it connects to.
+    static var agentRequirement: String {
+        "anchor apple generic and certificate leaf[subject.OU] = \"\(teamID)\""
+    }
 }
 
 /// XPC interface the agent exports. All methods are async with reply blocks.

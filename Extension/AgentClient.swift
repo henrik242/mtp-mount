@@ -15,6 +15,9 @@ final class AgentClient {
         if connection == nil {
             let c = NSXPCConnection(machServiceName: MtpAgentConfig.machServiceName, options: [])
             c.remoteObjectInterface = NSXPCInterface(with: MtpAgentXPC.self)
+            // Only talk to an agent signed by our team (the mach name alone
+            // could be squatted by another process in the user's session).
+            c.setCodeSigningRequirement(MtpAgentConfig.agentRequirement)
             c.invalidationHandler = { [weak self] in self?.clear() }
             c.interruptionHandler = { [weak self] in self?.clear() }
             c.resume()

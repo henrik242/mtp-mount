@@ -13,7 +13,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] `contents: write` scoped to the release job only
 
 ## Critical
-- [ ] 1. XPC: agent only accepts connections from our team-signed extension/app; client pins the agent's signature
+- [x] 1. XPC: agent only accepts connections from our team-signed extension/app; client pins the agent's signature
 - [ ] 2. Device identity: agent records the device serial; sync anchor = serial + connection epoch; destructive ops verify `baseVersion` against the device first, so a stale object handle can't hit an unrelated file
 - [ ] 3. Change tracking: real sync anchor; `enumerateChanges` returns `.syncAnchorExpired` when the device/epoch changes; USB hotplug (IOKit) in the agent bumps the epoch and signals the working set
 - [ ] 4. libmtp error stack is read after every call and cleared (no silent "empty folder" / "no such item" on I/O errors, no unbounded growth)
