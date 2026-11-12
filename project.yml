@@ -104,6 +104,7 @@ targets:
     sources:
       - Tests
       - Shared/MtpXPC.swift
+      - Shared/Ids.swift
       - Agent/MtpDevice.swift
       - Agent/AgentService.swift
       - Extension/Model.swift
