@@ -147,10 +147,11 @@ final class USBTransport: PTPTransport {
             interface.destroy()
             throw MtpError(.noDevice, "The USB interface has no bulk endpoints.")
         }
+        let opened = interface   // a local, so the closure below doesn't capture self early
         do {
-            bulkIn = try interface.copyPipe(withAddress: bulkInAddress)
-            bulkOut = try interface.copyPipe(withAddress: bulkOutAddress)
-            interruptIn = try interruptAddress.map { try interface.copyPipe(withAddress: $0) }
+            bulkIn = try opened.copyPipe(withAddress: bulkInAddress)
+            bulkOut = try opened.copyPipe(withAddress: bulkOutAddress)
+            interruptIn = try interruptAddress.map { try opened.copyPipe(withAddress: $0) }
         } catch {
             interface.destroy()
             throw MtpError(.noDevice, "Couldn't open the USB endpoints: \(error.localizedDescription)")
