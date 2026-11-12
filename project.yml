@@ -1,8 +1,11 @@
 name: MtpMount
 options:
   bundleIdPrefix: no.synth.mtpmount
+  # Apple Silicon only, latest macOS. The bundled libmtp/libusb come from
+  # Homebrew bottles built for the CI runner's OS, so this must not be lower
+  # than that OS (see .github/workflows/ci.yml, runs-on).
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "26.0"
   createIntermediateGroups: true
   minimumXcodeGenVersion: "2.40.0"
 
@@ -15,6 +18,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_HARDENED_RUNTIME: YES
+    ARCHS: arm64
     PRODUCT_NAME: "$(TARGET_NAME)"
     # debug-dylib/preview indirection breaks out-of-process extension loading
     ENABLE_DEBUG_DYLIB: NO
