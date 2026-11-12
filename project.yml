@@ -83,3 +83,6 @@ targets:
         LIBRARY_SEARCH_PATHS: /opt/homebrew/lib
         OTHER_SWIFT_FLAGS: "-Xcc -I/opt/homebrew/include"
         OTHER_LDFLAGS: "-lmtp"
+        # So the bundled libmtp/libusb in Contents/Frameworks are found at runtime
+        # (see scripts/bundle-and-sign.sh, which rewrites the link paths to @rpath).
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"

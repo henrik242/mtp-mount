@@ -18,7 +18,9 @@ Finder's sidebar, and is usable from the Terminal (`ls`, `cp`, `rsync`).
   `Garmin/NewFiles`), create folders, rename, move, and delete — all from Finder
   or the Terminal. In-place content edits aren't offered (MTP has no partial
   write; an edit would change the object id).
-- **Later:** bundle libmtp into the app for a notarized, self-contained build.
+- **Packaging (done):** libmtp + libusb are bundled into the app and the whole
+  thing is Developer ID signed, hardened, notarized and stapled — no Homebrew
+  dependency at runtime. See [Packaging & notarization](#packaging--notarization).
 
 ## Architecture
 
@@ -72,10 +74,38 @@ outside the App Store register their providers disabled, pending approval.)
 
 The volume then appears at `~/Library/CloudStorage/MtpMount-GarminEdge`.
 
+## Packaging & notarization
+
+`scripts/bundle-and-sign.sh` makes a built app self-contained: it copies
+`libmtp.9.dylib` and `libusb-1.0.0.dylib` into `Contents/Frameworks`, rewrites
+their link paths to `@rpath`, and re-signs everything inside-out with Developer ID
+and the hardened runtime. After this the app no longer needs Homebrew at runtime.
+
+```sh
+xcodebuild -project MtpMount.xcodeproj -scheme MtpMount -configuration Release \
+  -derivedDataPath build-release build
+APP=build-release/Build/Products/Release/MtpMount.app
+
+# Self-contain + sign (add --timestamp for notarization).
+scripts/bundle-and-sign.sh "$APP" --timestamp
+
+# Notarize + staple.
+ditto -c -k --keepParent "$APP" MtpMount.zip
+xcrun notarytool submit MtpMount.zip \
+  --key ~/keystores/arbeit/AuthKey_NYDDY3JYA8.p8 \
+  --key-id NYDDY3JYA8 --issuer <issuer-uuid> --wait
+xcrun stapler staple "$APP"
+```
+
+`spctl -a -vvv --type exec "$APP"` should then report *accepted / Notarized
+Developer ID*.
+
 ## Signing notes
 
 Uses Developer ID manual signing (team `358L7UXVJ4`) against provisioning profiles
 created via the App Store Connect API. A File Provider extension **requires**
 provisioning profiles (for `com.apple.application-identifier`); bare
-Developer ID signing without a profile fails. See the project memory for the full
-list of non-obvious requirements.
+Developer ID signing without a profile fails. The container app is **not**
+sandboxed (so it can install the helper LaunchAgent directly); only the extension
+is sandboxed, as the system requires. See the project memory for the full list of
+non-obvious requirements.
