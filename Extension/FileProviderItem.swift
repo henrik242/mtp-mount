@@ -42,7 +42,12 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
 
     var capabilities: NSFileProviderItemCapabilities {
         // Read + add/delete/rename/move. We don't advertise in-place content
-        // rewrites (MTP has no partial write; edits would change the object id).
+        // rewrites (MTP has no partial write; edits would change the object id)
+        // or trashing (MTP has no trash).
+        if id == .rootContainer {
+            // The device itself: browse and add to it, but not delete/rename/move it.
+            return [.allowsReading, .allowsContentEnumerating, .allowsAddingSubItems]
+        }
         if isFolder {
             return [.allowsReading, .allowsContentEnumerating,
                     .allowsAddingSubItems, .allowsDeleting, .allowsRenaming, .allowsReparenting]

@@ -22,14 +22,14 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] 5. App launch no longer wipes the domain (`removeAllDomains`) or boots out a running agent; explicit "Reset" instead
 - [x] 6. Agent drops the USB session only on transport errors, not on logical refusals
 - [x] 7. Structured errors over XPC, mapped to `NSFileProviderError` (`serverUnreachable`, `noSuchItem`, `filenameCollision`, `insufficientQuota`, `directoryNotEmpty`, …)
-- [ ] 8. `modifyItem`: content edits / unknown parents (Trash) are rejected instead of silently "succeeding"; `baseVersion` checked
-- [ ] 9. `createItem` returns the device's real metadata; honours `.mayAlreadyExist`; refuses duplicate names
+- [x] 8. `modifyItem`: content edits / unknown parents (Trash) are rejected instead of silently "succeeding"; `baseVersion` checked
+- [x] 9. `createItem` returns the device's real metadata; honours `.mayAlreadyExist`; refuses duplicate names
 - [ ] 10. dylib/OS mismatch: deployment target = runner OS; bundle script verifies arm64 + `minos`
 - [ ] 11. "Device in use by another app" detected and reported clearly (agent, Finder error, app UI, README)
 
 ## Medium
 - [x] `createFolder` passes a `strdup` copy to libmtp (no UB)
-- [ ] Byte progress + cancellation for uploads/downloads (libmtp callbacks ↔ `Progress` over XPC); partial uploads are cleaned up
+- [x] Byte progress + cancellation for uploads/downloads (libmtp callbacks ↔ `Progress` over XPC); partial uploads are cleaned up
 - [x] Folder delete honours `.recursive`; non-recursive delete of a non-empty folder → `.directoryNotEmpty`
 - [x] Move checks the MoveObject capability and returns "unsupported" instead of resetting the session
 - [x] Defensive parent filtering when listing (devices that ignore the parent filter at root)
@@ -45,8 +45,8 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [ ] *won't fix* — `SMAppService` instead of a hand-written LaunchAgent: the README records that BTM refuses the non-sandboxed helper; relocation is handled instead
 
 ## Low / cleanup
-- [ ] Root item is not deletable/renamable/movable
-- [ ] Packages/symlinks → "unsupported" instead of `.noSuchItem`
+- [x] Root item is not deletable/renamable/movable
+- [x] Packages/symlinks → "unsupported" instead of `.noSuchItem`
 - [ ] Dead code removed (`download(id:to:)`, `cloudStoragePath`, duplicate app-group + `rootParent` constants)
 - [ ] Stale comments ("read-only phase", app-group drop, `status` doc) fixed
 - [ ] `project.yml` duplicates removed; stale SMAppService comment corrected
