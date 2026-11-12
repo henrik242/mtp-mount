@@ -69,6 +69,12 @@ final class AgentClient {
         }
     }
 
+    func changes(since seq: UInt64, completion: @escaping (Result<ChangeSet, Error>) -> Void) {
+        proxy { completion(.failure($0)) }?.changes(since: seq) { data, error in
+            completion(Self.decode(ChangeSet.self, data, error))
+        }
+    }
+
     func list(parent: UInt32, completion: @escaping (Result<[MtpEntry], Error>) -> Void) {
         proxy { completion(.failure($0)) }?.list(parent: parent) { data, error in
             completion(Self.decode([MtpEntry].self, data, error))

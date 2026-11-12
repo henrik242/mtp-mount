@@ -75,5 +75,5 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] Domain renamed to a neutral "MTP Device" (`MtpDevice`); the old "GarminEdge" domain is removed on launch
 - [x] Helper renamed `mtpmount-agent`; no Garmin vendor preference (sticks with the last-opened device instead)
 - [x] UI, error messages, README, tests and hardware checklist speak of MTP devices / phones (incl. "File transfer" mode)
-- [ ] Changes made on the device while connected (e.g. a new photo on a phone) — listen for MTP object-added/removed events
+- [x] Changes made on the device while connected (e.g. a new photo on a phone): MTP object-added/removed events → change journal → item-level updates in Finder
 - [ ] One Finder location per device (named after it), so several devices can be mounted at once

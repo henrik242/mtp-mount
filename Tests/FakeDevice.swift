@@ -9,6 +9,10 @@ final class FakeDevice: MtpDevice {
     var alive = true
     var supportsMove = true
     var failNext: MtpError?
+    /// Events the next `pollEvents` returns.
+    var pendingEvents: [DeviceEvent] = []
+    /// When false, `close` reports that the handle couldn't be released safely.
+    var releasable = true
 
     private(set) var isOpen = false
     private(set) var openCount = 0
@@ -38,7 +42,29 @@ final class FakeDevice: MtpDevice {
         alive = true
     }
 
-    func close() { isOpen = false }
+    @discardableResult
+    func close() -> Bool {
+        isOpen = false
+        return releasable
+    }
+
+    func pollEvents() -> [DeviceEvent] {
+        defer { pendingEvents = [] }
+        return pendingEvents
+    }
+
+    /// Simulate a change made on the device itself.
+    @discardableResult
+    func addOnDevice(_ name: String, parent: UInt32 = 0) -> UInt32 {
+        let id = add(name, parent: parent)
+        pendingEvents.append(.objectAdded(id))
+        return id
+    }
+
+    func removeOnDevice(_ id: UInt32) {
+        objects[id] = nil
+        pendingEvents.append(.objectRemoved(id))
+    }
     func deviceName() -> String? { "Fake Phone" }
     func serialNumber() -> String? { "SER123" }
     func ping() throws { try check() }

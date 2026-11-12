@@ -27,6 +27,9 @@ final class MtpSession: MtpDevice {
     /// USB vendor/product of the last device opened, so a reopen sticks with
     /// the same device when several are attached.
     private var lastDevice: (vendor: UInt16, product: UInt16)?
+    /// Receives MTP events from libmtp's async interrupt transfer. Lives as long
+    /// as the session object, so the raw pointer handed to libmtp stays valid.
+    private let events = EventInbox()
 
     /// Call once per process before any session work.
     static func initializeLibrary() {
@@ -86,16 +89,62 @@ final class MtpSession: MtpDevice {
             ?? Self.takeString(LIBMTP_Get_Modelname(dev))
         serial = Self.takeString(LIBMTP_Get_Serialnumber(dev))
         LIBMTP_Clear_Errorstack(dev)
+        events.reset()
+        armEvents(dev)
     }
 
-    func close() {
-        if let dev = device {
-            LIBMTP_Release_Device(dev)
-            device = nil
+    @discardableResult
+    func close() -> Bool {
+        defer {
+            storageID = 0
+            name = nil
+            serial = nil
         }
-        storageID = 0
-        name = nil
-        serial = nil
+        guard let dev = device else { return true }
+        device = nil
+        // libmtp can't cancel its pending event transfer, and releasing the
+        // device frees memory that transfer's completion handler still uses.
+        // If the device is really gone the transfer fails quickly: give it a
+        // moment to finish before releasing.
+        let deadline = Date().addingTimeInterval(2)
+        while events.pending && Date() < deadline {
+            var tv = timeval(tv_sec: 0, tv_usec: 100_000)
+            _ = LIBMTP_Handle_Events_Timeout_Completed(&tv, nil)
+        }
+        if events.pending {
+            log.error("device still has a pending event read; abandoning the handle instead of releasing it")
+            return false
+        }
+        LIBMTP_Release_Device(dev)
+        events.reset()
+        return true
+    }
+
+    // MARK: - Device events
+
+    /// Start (or continue) listening for MTP events. Only ever called on the
+    /// owner's queue; the callback runs inside libusb event handling, which in
+    /// this process only happens on that same queue (in libmtp's synchronous
+    /// calls and in `pollEvents`), so the inbox needs no locking.
+    private func armEvents(_ dev: UnsafeMutablePointer<LIBMTP_mtpdevice_t>) {
+        guard !events.pending, !events.failed else { return }
+        let context = Unmanaged.passUnretained(events).toOpaque()
+        if LIBMTP_Read_Event_Async(dev, eventCallback, context) == 0 {
+            events.pending = true
+        } else {
+            events.failed = true
+            log.notice("device events unavailable; changes made on the device appear after a reconnect")
+        }
+        LIBMTP_Clear_Errorstack(dev)
+    }
+
+    func pollEvents() -> [DeviceEvent] {
+        guard let dev = device else { return [] }
+        var tv = timeval(tv_sec: 0, tv_usec: 0)
+        _ = LIBMTP_Handle_Events_Timeout_Completed(&tv, nil)
+        let received = events.take()
+        armEvents(dev)
+        return received
     }
 
     func deviceName() -> String? { name }
@@ -344,4 +393,49 @@ private let progressTrampoline: LIBMTP_progressfunc_t = { sent, total, data in
     guard let data else { return 0 }
     let box = Unmanaged<ProgressBox>.fromOpaque(data).takeUnretainedValue()
     return box.report(sent, total) ? 0 : 1
+}
+
+/// Collects events delivered by libmtp's async event callback.
+private final class EventInbox {
+    /// An event read is outstanding (libmtp holds our context pointer).
+    var pending = false
+    /// The event channel failed or isn't supported; don't re-arm.
+    var failed = false
+    private var received: [DeviceEvent] = []
+
+    func reset() {
+        pending = false
+        failed = false
+        received = []
+    }
+
+    func take() -> [DeviceEvent] {
+        defer { received = [] }
+        return received
+    }
+
+    func deliver(ok: Bool, event: LIBMTP_event_t, param: UInt32) {
+        pending = false
+        guard ok else {
+            failed = true
+            received.append(.linkLost)
+            return
+        }
+        switch event {
+        case LIBMTP_EVENT_OBJECT_ADDED: received.append(.objectAdded(param))
+        case LIBMTP_EVENT_OBJECT_REMOVED: received.append(.objectRemoved(param))
+        case LIBMTP_EVENT_STORE_ADDED, LIBMTP_EVENT_STORE_REMOVED: received.append(.storageChanged)
+        default:
+            // Property/info changes (battery level, free space, …) arrive
+            // constantly on phones and say nothing specific: ignore them.
+            break
+        }
+    }
+}
+
+/// libmtp event callback (`LIBMTP_event_cb_fn`); `ret` is 0 for success.
+private let eventCallback: LIBMTP_event_cb_fn = { ret, event, param, context in
+    guard let context else { return }
+    Unmanaged<EventInbox>.fromOpaque(context).takeUnretainedValue()
+        .deliver(ok: ret == 0, event: event, param: param)
 }

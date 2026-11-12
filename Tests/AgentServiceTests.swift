@@ -11,7 +11,7 @@ final class AgentServiceTests: XCTestCase {
         clock = Date(timeIntervalSince1970: 1_000)
         service = AgentService(device: device, now: { [unowned self] in self.clock })
         sessionChanges = []
-        service.onSessionChange = { [unowned self] in self.sessionChanges.append($0) }
+        service.onChange = { [unowned self] in self.sessionChanges.append($0) }
     }
 
     // MARK: - Helpers
@@ -107,6 +107,105 @@ final class AgentServiceTests: XCTestCase {
         XCTAssertFalse(s.connected)
         XCTAssertEqual(s.failure, .noDevice)
         XCTAssertEqual(sessionChanges.last?.connected, false)
+    }
+
+    // MARK: - Device events / change journal
+
+    private func poll() {
+        let done = expectation(description: "poll")
+        service.pollDeviceEvents { done.fulfill() }
+        wait(for: [done], timeout: 5)
+    }
+
+    private func changes(since seq: UInt64) -> (set: ChangeSet?, error: NSError?) {
+        let (data, error): (Data?, NSError?) = call { reply in
+            service.changes(since: seq) { reply(($0, $1)) }
+        }
+        return (data.flatMap { try? JSONDecoder().decode(ChangeSet.self, from: $0) }, error)
+    }
+
+    func testObjectAddedOnDeviceIsReportedAsUpdate() {
+        let start = status()
+        let id = device.addOnDevice("IMG_0001.jpg")
+        poll()
+        XCTAssertEqual(sessionChanges.last?.changeSeq, 1, "the File Provider is signalled")
+        let result = changes(since: start.changeSeq)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.set?.expired, false)
+        XCTAssertEqual(result.set?.updated.map(\.id), [id])
+        XCTAssertEqual(result.set?.deleted, [])
+        XCTAssertEqual(result.set?.latestSeq, 1)
+        XCTAssertEqual(result.set?.sessionID, start.sessionID)
+        XCTAssertEqual(changes(since: 1).set?.updated, [], "nothing new after the latest position")
+    }
+
+    func testObjectRemovedOnDeviceIsReportedAsDeletion() {
+        let id = device.add("old.jpg")
+        _ = status()
+        device.removeOnDevice(id)
+        poll()
+        XCTAssertEqual(changes(since: 0).set?.deleted, [id])
+    }
+
+    func testAddedThenRemovedCollapsesToDeletion() {
+        _ = status()
+        let id = device.addOnDevice("tmp.jpg")
+        device.removeOnDevice(id)
+        poll()
+        let set = changes(since: 0).set
+        XCTAssertEqual(set?.updated, [])
+        XCTAssertEqual(set?.deleted, [id])
+        XCTAssertEqual(set?.latestSeq, 2)
+    }
+
+    func testStorageChangeExpiresTheAnchor() {
+        _ = status()
+        device.pendingEvents = [.storageChanged]
+        poll()
+        XCTAssertEqual(changes(since: 0).set?.expired, true)
+    }
+
+    func testJournalOverflowExpiresOldAnchors() {
+        _ = status()
+        device.pendingEvents = (0..<(AgentService.journalLimit + 1)).map { .objectRemoved(UInt32(10_000 + $0)) }
+        poll()
+        XCTAssertEqual(changes(since: 0).set?.expired, true)
+        XCTAssertEqual(changes(since: 1).set?.expired, false)
+    }
+
+    func testChangesWithoutDeviceFailInsteadOfOpening() {
+        device.present = true
+        XCTAssertEqual(changes(since: 0).error?.mtpFailure, .noDevice)
+        XCTAssertFalse(device.isOpen)
+    }
+
+    func testReopenedSessionStartsANewJournal() {
+        let first = status()
+        _ = device.addOnDevice("a.jpg")
+        poll()
+        device.alive = false
+        _ = list()
+        let second = status()
+        XCTAssertNotEqual(first.sessionID, second.sessionID)
+        XCTAssertEqual(second.changeSeq, 0)
+    }
+
+    func testLostEventChannelWithDeadLinkDropsSession() {
+        _ = status()
+        device.alive = false
+        device.pendingEvents = [.linkLost]
+        poll()
+        XCTAssertFalse(device.isOpen)
+    }
+
+    func testUnsafeCloseAsksForRestart() {
+        var restartRequested = false
+        service.onUnsafeClose = { restartRequested = true }
+        _ = status()
+        device.releasable = false
+        device.alive = false
+        _ = list()
+        XCTAssertTrue(restartRequested)
     }
 
     // MARK: - Objects

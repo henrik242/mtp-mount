@@ -167,14 +167,29 @@ final class SyncAnchorTests: XCTestCase {
     }
 
     func testOfflineAnchor() {
-        XCTAssertEqual(SyncAnchor.make(nil), Data("offline".utf8))
-        XCTAssertEqual(SyncAnchor.make(status(nil, connected: false)), Data("offline".utf8))
+        XCTAssertEqual(SyncAnchor.make(nil), SyncAnchor.offline)
+        XCTAssertEqual(SyncAnchor.make(status(nil, connected: false)), SyncAnchor.offline)
+        XCTAssertNil(SyncAnchor(SyncAnchor.offline))
+        XCTAssertNil(SyncAnchor(Data("S1|x-1".utf8)), "anchors from older versions are not understood")
     }
 
-    func testAnchorChangesWithSessionOrDevice() {
+    func testAnchorRoundTripsAndChangesWithSessionOrDevice() {
         let a = SyncAnchor.make(status("x-1"))
+        XCTAssertEqual(SyncAnchor(a), SyncAnchor(serial: "S1", sessionID: "x-1", seq: 0))
         XCTAssertEqual(a, SyncAnchor.make(status("x-1")))
         XCTAssertNotEqual(a, SyncAnchor.make(status("x-2")))
         XCTAssertNotEqual(a, SyncAnchor.make(status("x-1", serial: "S2")))
+    }
+
+    func testAnchorContinuesOnlyTheSameSession() {
+        let anchor = SyncAnchor(serial: "S1", sessionID: "x-1", seq: 3)
+        func set(_ session: String, serial: String? = "S1", latest: UInt64 = 5, expired: Bool = false) -> ChangeSet {
+            ChangeSet(serial: serial, sessionID: session, latestSeq: latest, expired: expired, updated: [], deleted: [])
+        }
+        XCTAssertTrue(anchor.continues(set("x-1")))
+        XCTAssertFalse(anchor.continues(set("x-2")))
+        XCTAssertFalse(anchor.continues(set("x-1", serial: "S2")))
+        XCTAssertFalse(anchor.continues(set("x-1", expired: true)))
+        XCTAssertFalse(anchor.continues(set("x-1", latest: 2)))
     }
 }

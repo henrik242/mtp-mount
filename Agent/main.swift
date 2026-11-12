@@ -31,8 +31,8 @@ let service = AgentService(device: MtpSession())
 // When the device session changes (opened, replugged, lost), the sync anchor
 // changes; tell the system to ask the extension for changes so Finder catches
 // up without waiting for the user to touch the folder.
-service.onSessionChange = { status in
-    log.info("session changed: connected=\(status.connected) \(status.deviceName ?? "", privacy: .public)")
+service.onChange = { status in
+    log.info("device changed: connected=\(status.connected) \(status.deviceName ?? "", privacy: .public) seq \(status.changeSeq)")
     guard let manager = NSFileProviderManager(for: FP.domain) else {
         log.error("no File Provider manager for the domain; is it registered?")
         return
@@ -41,6 +41,16 @@ service.onSessionChange = { status in
         if let error { log.error("signalEnumerator failed: \(error.localizedDescription, privacy: .public)") }
     }
 }
+
+// A device handle that couldn't be released safely is abandoned; only a fresh
+// process can open the device again. launchd restarts us on the next request.
+service.onUnsafeClose = {
+    log.error("exiting so launchd can restart the agent with a clean USB state")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+}
+
+// Pick up changes the device reports while connected (e.g. a new photo).
+service.startEventPolling()
 
 // Notice plug/unplug as it happens instead of on the next failing request.
 let usbMonitor = UsbMonitor { service.usbDevicesChanged() }

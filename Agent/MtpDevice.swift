@@ -19,6 +19,17 @@ struct MtpError: Error, CustomStringConvertible, Equatable {
     var nsError: NSError { .mtp(kind, message) }
 }
 
+/// Something the device reported on its own (MTP events), e.g. a photo taken
+/// on a phone while it's connected.
+enum DeviceEvent: Equatable {
+    case objectAdded(UInt32)
+    case objectRemoved(UInt32)
+    /// A storage appeared/disappeared (e.g. an SD card): too coarse to patch up.
+    case storageChanged
+    /// The event channel failed; the session is probably dead.
+    case linkLost
+}
+
 /// Byte progress for a transfer: called with (done, total); return false to cancel.
 typealias TransferProgress = (_ done: UInt64, _ total: UInt64) -> Bool
 
@@ -28,11 +39,18 @@ protocol MtpDevice: AnyObject {
     var isOpen: Bool { get }
     /// Open the device. Throws `.noDevice` or `.deviceBusy`.
     func open() throws
-    func close()
+    /// Release the device. Returns false if it couldn't be released safely
+    /// (libmtp would be left with a pending USB transfer pointing at freed
+    /// memory); the handle is then abandoned and the owner should restart the
+    /// process to get the device back.
+    @discardableResult func close() -> Bool
     func deviceName() -> String?
     func serialNumber() -> String?
     /// Cheap round-trip that throws `.disconnected` if the session is dead.
     func ping() throws
+    /// Collect device events received since the last call, without blocking,
+    /// and keep listening for more.
+    func pollEvents() -> [DeviceEvent]
 
     func list(parent: UInt32) throws -> [MtpEntry]
     /// Metadata for one object, or nil if it doesn't exist.
