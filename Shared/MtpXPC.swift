@@ -139,3 +139,15 @@ extension NSError {
     func move(objectID: UInt32, toParent newParent: UInt32,
               reply: @escaping (_ error: NSError?) -> Void)
 }
+
+/// File Provider sync anchors derived from the agent's device session: the
+/// device's serial plus the session id, so a replug, a different device or an
+/// agent restart all yield a new anchor (and a full re-enumeration).
+enum SyncAnchor {
+    static func make(_ status: AgentStatus?) -> Data {
+        guard let status, status.connected, let session = status.sessionID else {
+            return Data("offline".utf8)
+        }
+        return Data("\(status.serial ?? "unknown")|\(session)".utf8)
+    }
+}

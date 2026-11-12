@@ -68,6 +68,7 @@ targets:
           - "Info.plist"
           - "*.plist"
       - path: Shared/MtpXPC.swift
+      - path: Shared/Ids.swift
     settings:
       base:
         PRODUCT_NAME: garmin-mtp-agent
