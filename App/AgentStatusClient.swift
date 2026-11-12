@@ -1,6 +1,6 @@
 import Foundation
 
-/// Asks the helper agent for the device state over XPC (the app is not
+/// Asks the helper agent which devices are attached, over XPC (the app is not
 /// sandboxed, so it can look up the agent's mach service directly).
 final class AgentStatusClient {
     private var connection: NSXPCConnection?
@@ -18,9 +18,9 @@ final class AgentStatusClient {
         return c
     }
 
-    /// The agent's view of the device, or the XPC error if it can't be reached.
+    /// The agent's view of attached devices, or the XPC error if it can't be reached.
     @MainActor
-    func status() async -> Result<AgentStatus, Error> {
+    func overview() async -> Result<AgentOverview, Error> {
         let connection = currentConnection()
         return await withCheckedContinuation { continuation in
             // NSXPC calls exactly one of the error handler or the reply.
@@ -31,10 +31,10 @@ final class AgentStatusClient {
                 continuation.resume(returning: .failure(CocoaError(.xpcConnectionInvalid)))
                 return
             }
-            agent.status { data in
+            agent.overview { data in
                 do {
                     continuation.resume(returning: .success(
-                        try JSONDecoder().decode(AgentStatus.self, from: data ?? Data())))
+                        try JSONDecoder().decode(AgentOverview.self, from: data ?? Data())))
                 } catch {
                     continuation.resume(returning: .failure(error))
                 }

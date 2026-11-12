@@ -14,19 +14,21 @@ Requires an Apple Silicon Mac on the latest macOS.
 1. Download the latest `MtpMount-x.y.z.dmg` from the
    [Releases](../../releases) page, open it and drag **MtpMount** to
    **Applications**. (It must run from Applications.)
-2. Open MtpMount from Applications. It installs a small helper and adds the
-   "MTP Device" location.
+2. Open MtpMount from Applications. It installs a small helper.
 3. If the window says so, turn on the extension: **System Settings → General →
    Login Items & Extensions → File Providers → MtpMount** (the window has a
    button that opens the right page).
 4. Connect the device with a USB data cable and unlock it. On an Android phone,
-   tap the USB notification and choose **File transfer**. The window shows
-   **Connected: <device name>**, and the device appears in Finder's sidebar.
-   "Show in Finder" opens it.
+   tap the USB notification and choose **File transfer**. The device appears
+   in the window and in Finder's sidebar under its own name (e.g. "Galaxy
+   S25"). "Show in Finder" opens it.
 
 You can copy files off the device, copy files onto it, and create, rename, move
-and delete files and folders. One device is shown at a time; with several
-attached, the one used last is kept. Editing a file in place on the device isn't
+and delete files and folders. Changes made on the device while it's connected
+(a new photo, say) show up in Finder within a few seconds. Several devices can
+be connected at once; each gets its own location. A device's location stays
+(shown as unavailable) when it's unplugged and comes back when you reconnect
+it; **Forget** in the window removes it. Editing a file in place on the device isn't
 possible (MTP has no partial writes): copy it to your Mac, edit it, copy it back.
 
 ### Troubleshooting
@@ -39,8 +41,9 @@ possible (MTP has no partial writes): copy it to your Mac, edit it, copy it back
 - **"No device connected"** although it's plugged in — use a data cable (not a
   charge-only one), unlock the device, on a phone choose **File transfer** in
   the USB notification, and try another port/cable.
-- **The location doesn't appear in Finder** — make sure the extension is
-  enabled (step 3), then use **Troubleshooting → Reset** in the window.
+- **The device doesn't appear in Finder** — make sure the extension is
+  enabled (step 3), open MtpMount once with the device attached, then use
+  **Troubleshooting → Reset** in the window if it's still missing.
 - **"The MtpMount helper isn't running"** — **Troubleshooting → Reinstall helper**.
 - **Finder shows stale contents** — **Troubleshooting → Refresh Finder**.
 
@@ -49,7 +52,7 @@ possible (MTP has no partial writes): copy it to your Mac, edit it, copy it back
 Open MtpMount, choose **Troubleshooting → Uninstall…**, then move MtpMount to
 the Trash. (That removes the helper's LaunchAgent,
 `~/Library/LaunchAgents/no.synth.mtpmount.helper.plist`, and the Finder
-location.)
+locations.)
 
 ## Status
 
@@ -77,7 +80,7 @@ MtpMount.app                        container app (NOT sandboxed) — registers 
   │    MtpMountFileProvider.appex    sandboxed replicated File Provider extension;
   │                                  all device I/O goes over XPC to the helper
   └─ Contents/MacOS/
-       mtpmount-agent               non-sandboxed helper owning the single libmtp
+       mtpmount-agent               non-sandboxed helper owning the libmtp
                                     USB session; vends a launchd mach XPC service
 ```
 
@@ -93,15 +96,20 @@ for enumeration, and for a file download streams
 extension passes over XPC (uploads work the same way in reverse), with byte
 progress and cancellation carried by `NSProgress` across the connection.
 
-MTP object handles are only valid within one USB session, so the File Provider
-sync anchor is the device's serial plus a session id, plus a position in a
-journal of the MTP events the device sends (object added/removed), which the
-helper polls once a second. Changes made on the device while it's connected (a
-new photo on a phone) are reported to Finder item by item; a new session means
-a full re-enumeration. The helper watches USB
-hotplug (IOKit) and, whenever its session opens or is lost, signals the
-system, which then re-enumerates. Operations that change an existing item
-first check it still matches the version Finder based the change on.
+Each attached device gets its own File Provider domain, identified by the
+device's USB serial number and named after the device. The helper opens every
+attached MTP device (watching USB hotplug via IOKit) and every request names
+its device. When a new device appears the helper adds its domain — or, if the
+system doesn't let the helper do that, starts the app in the background
+(`--sync-domains`) to add it.
+
+MTP object handles are only valid within one USB session, so a domain's sync
+anchor is the device's serial plus a session id, plus a position in a journal
+of the MTP events the device sends (object added/removed), which the helper
+polls once a second. Changes made on the device while it's connected are
+reported to Finder item by item; a new session means a full re-enumeration.
+Operations that change an existing item first check it still matches the
+version Finder based the change on.
 
 ## Build
 

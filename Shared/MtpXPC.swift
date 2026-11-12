@@ -40,19 +40,47 @@ enum MtpFailure: Int, Codable, CaseIterable {
     var isTransport: Bool { self == .disconnected }
 }
 
-/// Snapshot of the agent's device session, JSON-encoded over XPC.
-struct AgentStatus: Codable, Equatable {
-    var connected: Bool
-    var deviceName: String?
+/// One open device, as the agent reports it (JSON over XPC).
+struct DeviceStatus: Codable, Equatable {
+    /// Stable identifier of the device (see `DeviceKey`); also the identifier
+    /// of its File Provider domain.
+    var key: String
+    var name: String
     var serial: String?
     /// Identifies one continuous USB session of one agent process. Changes
     /// whenever the device is (re)opened, so object handles cached under an
     /// older value may no longer refer to the same objects.
-    var sessionID: String?
+    var sessionID: String
     /// Position in the session's change journal (see `ChangeSet`).
     var changeSeq: UInt64 = 0
-    var failure: MtpFailure?
+}
+
+/// Everything the agent knows about attached devices (JSON over XPC).
+struct AgentOverview: Codable, Equatable {
+    var devices: [DeviceStatus]
+    /// Why a device that's attached isn't listed (e.g. `.deviceBusy`), if any.
+    var problem: MtpFailure?
     var message: String?
+
+    func device(_ key: String) -> DeviceStatus? { devices.first { $0.key == key } }
+}
+
+/// Stable per-device identifiers: the USB serial number when the device has
+/// one, otherwise vendor/product id (so two identical serial-less devices
+/// would share a location — rare for MTP devices).
+enum DeviceKey {
+    static let prefix = "mtp-"
+
+    static func make(serial: String?, vendor: UInt16, product: UInt16) -> String {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        if let serial {
+            let cleaned = String(serial.filter { allowed.contains($0) })
+            if !cleaned.isEmpty { return prefix + cleaned }
+        }
+        return prefix + String(format: "%04x-%04x", vendor, product)
+    }
+
+    static func isDeviceKey(_ value: String) -> Bool { value.hasPrefix(prefix) }
 }
 
 /// Changes the device reported (MTP events) since a journal position, JSON
@@ -76,6 +104,9 @@ enum MtpAgentConfig {
     static let teamID = "358L7UXVJ4"
     /// Logging subsystem shared by all components.
     static let logSubsystem = "no.synth.mtpmount"
+    /// Launch argument that makes the app add domains for attached devices
+    /// and quit (used by the agent when it may not add domains itself).
+    static let syncDomainsArgument = "--sync-domains"
     /// File name of the helper executable in Contents/MacOS.
     static let agentExecutable = "mtpmount-agent"
     /// launchd job label for the helper agent.
@@ -120,45 +151,45 @@ extension NSError {
 }
 
 /// XPC interface the agent exports. All methods are async with reply blocks;
-/// failures arrive as an `NSError` in `MtpAgentConfig.errorDomain`.
+/// failures arrive as an `NSError` in `MtpAgentConfig.errorDomain`. Every
+/// device operation names its device by `DeviceKey`; an unknown or detached
+/// device fails with `.noDevice`.
 @objc protocol MtpAgentXPC {
-    /// JSON-encoded `AgentStatus`. Opens the device if needed and checks that an
-    /// open session is still alive.
-    func status(reply: @escaping (_ json: Data?) -> Void)
+    /// JSON-encoded `AgentOverview`: the open devices (after checking that
+    /// they're alive and opening newly attached ones).
+    func overview(reply: @escaping (_ json: Data?) -> Void)
     /// JSON-encoded `[MtpEntry]` for the children of `parent` (`rootParent` = top).
-    func list(parent: UInt32, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
+    func list(device: String, parent: UInt32, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
     /// JSON-encoded `ChangeSet`: what the device reported since journal
-    /// position `seq` of the current session. Fails with `.noDevice` when no
-    /// device is connected.
-    func changes(since seq: UInt64, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
+    /// position `seq` of its current session.
+    func changes(device: String, since seq: UInt64, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
     /// JSON-encoded `MtpEntry` for a single object; fails with `.noSuchObject`
     /// if it no longer exists.
-    func item(objectID: UInt32, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
+    func item(device: String, objectID: UInt32, reply: @escaping (_ json: Data?, _ error: NSError?) -> Void)
     /// Stream object `objectID` into the open file `destination` (the caller owns
     /// and created it, e.g. in its own sandbox). Passing a FileHandle sends the
     /// underlying fd over XPC. Reports byte progress through the caller's
     /// current `Progress`, and stops if it is cancelled.
-    func fetch(objectID: UInt32,
-               into destination: FileHandle,
+    func fetch(device: String, objectID: UInt32, into destination: FileHandle,
                reply: @escaping (_ error: NSError?) -> Void)
 
     // MARK: Writes
 
     /// Upload `size` bytes read from `source` as a new file `name` under `parent`.
     /// Replies with the new object id. Progress/cancellation as for `fetch`.
-    func upload(parent: UInt32, name: String, size: UInt64, from source: FileHandle,
+    func upload(device: String, parent: UInt32, name: String, size: UInt64, from source: FileHandle,
                 reply: @escaping (_ newObjectID: UInt32, _ error: NSError?) -> Void)
     /// Create a folder `name` under `parent`. Replies with the new folder id.
-    func createFolder(parent: UInt32, name: String,
+    func createFolder(device: String, parent: UInt32, name: String,
                       reply: @escaping (_ newObjectID: UInt32, _ error: NSError?) -> Void)
     /// Delete an object. A non-empty folder fails with `.directoryNotEmpty`
     /// unless `recursive` is set.
-    func delete(objectID: UInt32, recursive: Bool, reply: @escaping (_ error: NSError?) -> Void)
+    func delete(device: String, objectID: UInt32, recursive: Bool, reply: @escaping (_ error: NSError?) -> Void)
     /// Rename an object by id.
-    func rename(objectID: UInt32, to newName: String,
+    func rename(device: String, objectID: UInt32, to newName: String,
                 reply: @escaping (_ error: NSError?) -> Void)
     /// Move an object to a new parent folder.
-    func move(objectID: UInt32, toParent newParent: UInt32,
+    func move(device: String, objectID: UInt32, toParent newParent: UInt32,
               reply: @escaping (_ error: NSError?) -> Void)
 }
 
@@ -173,10 +204,10 @@ struct SyncAnchor: Codable, Equatable {
 
     static let offline = Data("offline".utf8)
 
-    /// The anchor for the agent's current state (`offline` when no device).
-    static func make(_ status: AgentStatus?) -> Data {
-        guard let status, status.connected, let session = status.sessionID else { return offline }
-        return SyncAnchor(serial: status.serial, sessionID: session, seq: status.changeSeq).data
+    /// The anchor for a device's current state (`offline` when not attached).
+    static func make(_ status: DeviceStatus?) -> Data {
+        guard let status else { return offline }
+        return SyncAnchor(serial: status.serial, sessionID: status.sessionID, seq: status.changeSeq).data
     }
 
     var data: Data { (try? JSONEncoder().encode(self)) ?? SyncAnchor.offline }

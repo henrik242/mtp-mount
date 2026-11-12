@@ -1,17 +1,24 @@
 import Foundation
 import FileProvider
 
-/// Shared identifiers used by both the container app and the extension.
+/// File Provider domains: one per MTP device, identified by its `DeviceKey`
+/// and named after the device (the name shown in Finder's sidebar and used
+/// for its ~/Library/CloudStorage folder).
 enum FP {
-    /// Domain identifier — stable string, not shown to the user.
-    static let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: "MtpDevice")
-    /// Display name — becomes the label in Finder's sidebar and the
-    /// ~/Library/CloudStorage folder name. Fixed for the domain's lifetime,
-    /// so it names no particular device.
-    static let domainDisplayName = "MTP Device"
+    /// Domains created by earlier versions (one shared location), removed on launch.
+    static let legacyDomainIdentifiers: Set<String> = ["GarminEdge", "MtpDevice"]
 
-    /// The one domain this provider serves.
-    static var domain: NSFileProviderDomain {
-        NSFileProviderDomain(identifier: domainIdentifier, displayName: domainDisplayName)
+    static func domain(forDevice key: String, name: String) -> NSFileProviderDomain {
+        NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier(rawValue: key), displayName: name)
+    }
+
+    /// The device a domain belongs to, or nil for a domain that isn't per-device.
+    static func deviceKey(of domain: NSFileProviderDomain) -> String? {
+        DeviceKey.isDeviceKey(domain.identifier.rawValue) ? domain.identifier.rawValue : nil
+    }
+
+    /// A manager for an existing domain (the display name doesn't matter for lookup).
+    static func manager(forDevice key: String) -> NSFileProviderManager? {
+        NSFileProviderManager(for: domain(forDevice: key, name: key))
     }
 }

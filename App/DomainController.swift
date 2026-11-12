@@ -4,30 +4,39 @@ import os
 
 private let log = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "app")
 
-/// What the user should know about the device right now.
-enum DeviceState: Equatable {
-    case checking
-    case connected(name: String)
-    case noDevice
-    case busy(message: String)
+/// A device as the window shows it: attached now, or known from an earlier
+/// connection (its Finder location stays until the user forgets it).
+struct DeviceRow: Identifiable, Equatable {
+    var id: String { key }
+    let key: String
+    let name: String
+    let connected: Bool
+    /// The user hasn't enabled this location in System Settings yet.
+    let needsEnabling: Bool
+}
+
+/// What's wrong when no device can be shown, if anything.
+enum AgentProblem: Equatable {
+    case none
     case agentUnavailable
+    case busy(message: String)
     case error(message: String)
 }
 
-/// Registers the File Provider domain and the helper agent, and tracks the
-/// state the window shows.
+/// Installs the helper agent, keeps one File Provider domain per device, and
+/// tracks the state the window shows.
 @MainActor
 final class DomainController: ObservableObject {
-    @Published private(set) var device: DeviceState = .checking
-    @Published private(set) var domainRegistered = false
-    /// nil until known; false means the user hasn't enabled the extension yet.
-    @Published private(set) var extensionEnabled: Bool?
+    @Published private(set) var rows: [DeviceRow] = []
+    @Published private(set) var problem: AgentProblem = .none
+    @Published private(set) var checked = false
     @Published private(set) var agentLoaded = false
     /// Last result of a troubleshooting action.
     @Published var message: String?
 
     private let statusClient = AgentStatusClient()
-    private var lastSessionID: String?
+    /// Session per device last time we looked, to signal domains on changes.
+    private var lastSessions: [String: String] = [:]
 
     /// Where the app runs from. Outside /Applications (e.g. straight from the
     /// DMG, or translocated by Gatekeeper) the helper path would go stale.
@@ -135,60 +144,102 @@ final class DomainController: ObservableObject {
         }.value
     }
 
-    // MARK: - Domain
+    // MARK: - Domains
 
-    /// Make sure the helper and the domain exist. Safe to call on every launch:
-    /// an existing domain (and its downloaded files / pending uploads) is kept.
+    /// Install the helper and bring the domains up to date. Safe to call on
+    /// every launch: existing domains (and their downloaded files / pending
+    /// uploads) are kept.
     func register() async {
         await registerAgent()
-        do {
-            // Drop domains from older versions (e.g. the former device-specific
-            // "GarminEdge" domain) so only the current one shows in Finder.
-            for stale in try await NSFileProviderManager.domains() where stale.identifier != FP.domainIdentifier {
-                log.info("register: removing old domain \(stale.identifier.rawValue, privacy: .public)")
-                try await NSFileProviderManager.remove(stale)
-            }
-            if try await currentDomain() == nil {
-                log.info("register: adding domain")
-                try await NSFileProviderManager.add(FP.domain)
-            }
-        } catch {
-            log.error("register failed: \(error.localizedDescription, privacy: .public)")
-            message = "Couldn't register the File Provider: \(error.localizedDescription)"
+        await refresh()
+    }
+
+    /// Ask the agent which devices are attached, add a domain for each new
+    /// one, remove domains of older versions, and update the window's rows.
+    func refresh() async {
+        let overview = await statusClient.overview()
+        var domains = (try? await NSFileProviderManager.domains()) ?? []
+
+        for stale in domains where FP.legacyDomainIdentifiers.contains(stale.identifier.rawValue) {
+            log.info("removing old domain \(stale.identifier.rawValue, privacy: .public)")
+            try? await NSFileProviderManager.remove(stale)
         }
-        await refreshDomain()
+        domains.removeAll { FP.legacyDomainIdentifiers.contains($0.identifier.rawValue) }
+
+        let attached: [DeviceStatus]
+        switch overview {
+        case .failure:
+            attached = []
+            problem = .agentUnavailable
+        case .success(let o):
+            attached = o.devices
+            switch o.problem {
+            case .deviceBusy?: problem = .busy(message: o.message ?? "")
+            case nil, .noDevice?: problem = .none
+            default: problem = .error(message: o.message ?? "Unknown error")
+            }
+        }
+
+        for device in attached where !domains.contains(where: { $0.identifier.rawValue == device.key }) {
+            do {
+                log.info("adding domain for \(device.name, privacy: .public)")
+                let domain = FP.domain(forDevice: device.key, name: device.name)
+                try await NSFileProviderManager.add(domain)
+                domains.append(domain)
+            } catch {
+                message = "Couldn't add “\(device.name)” to Finder: \(error.localizedDescription)"
+            }
+        }
+
+        // Signal domains whose device session changed (attached, replugged,
+        // lost) so Finder catches up, as a backup to the agent's own signal.
+        let sessions = Dictionary(attached.map { ($0.key, $0.sessionID) }, uniquingKeysWith: { a, _ in a })
+        if checked {
+            for key in Set(sessions.keys).union(lastSessions.keys) where sessions[key] != lastSessions[key] {
+                try? await FP.manager(forDevice: key)?.signalEnumerator(for: .workingSet)
+            }
+        }
+        lastSessions = sessions
+
+        rows = domains.compactMap { domain -> DeviceRow? in
+            guard let key = FP.deviceKey(of: domain) else { return nil }
+            return DeviceRow(key: key,
+                             name: attached.first { $0.key == key }?.name ?? domain.displayName,
+                             connected: sessions[key] != nil,
+                             needsEnabling: !domain.userEnabled)
+        }.sorted { ($0.connected ? 0 : 1, $0.name) < ($1.connected ? 0 : 1, $1.name) }
+        checked = true
     }
 
-    private func currentDomain() async throws -> NSFileProviderDomain? {
-        try await NSFileProviderManager.domains().first { $0.identifier == FP.domainIdentifier }
+    /// Remove a device's Finder location (it comes back when the device is
+    /// attached again).
+    func forget(_ row: DeviceRow) async {
+        do {
+            try await NSFileProviderManager.remove(FP.domain(forDevice: row.key, name: row.name))
+        } catch {
+            message = "Couldn't remove “\(row.name)”: \(error.localizedDescription)"
+        }
+        await refresh()
     }
 
-    func refreshDomain() async {
-        let domain = try? await currentDomain()
-        domainRegistered = domain != nil
-        extensionEnabled = domain.map(\.userEnabled)
-    }
-
-    /// Troubleshooting: purge every domain of this provider (including stale
-    /// state from older registrations), reinstall the helper and re-add.
+    /// Troubleshooting: purge every domain of this provider, reinstall the
+    /// helper and re-add domains for the attached devices.
     func reset() async {
         do {
             try await NSFileProviderManager.removeAllDomains()
         } catch {
             log.error("removeAllDomains failed: \(error.localizedDescription, privacy: .public)")
         }
+        lastSessions = [:]
         await registerAgent(force: true)
-        await register()
+        await refresh()
         message = "Reset done."
     }
 
-    /// Ask the system to re-enumerate so device changes show up.
-    func signalChange() async {
-        guard let manager = NSFileProviderManager(for: FP.domain) else { return }
-        do {
-            try await manager.signalEnumerator(for: .workingSet)
-        } catch {
-            log.error("signalEnumerator failed: \(error.localizedDescription, privacy: .public)")
+    /// Ask the system to re-enumerate every device so changes show up.
+    func signalAll() async {
+        for row in rows {
+            try? await FP.manager(forDevice: row.key)?.signalEnumerator(for: .workingSet)
         }
     }
 
@@ -201,40 +252,15 @@ final class DomainController: ObservableObject {
             log.error("removeAllDomains failed: \(error.localizedDescription, privacy: .public)")
         }
         await unregisterAgent()
-        await refreshDomain()
-        message = "Uninstalled the helper and the Finder location. You can now move MtpMount to the Trash."
-    }
-
-    // MARK: - Device
-
-    /// Poll the agent for the device state; signal the system when the device
-    /// session changed (replug, another device) so Finder catches up.
-    func refreshDevice() async {
-        switch await statusClient.status() {
-        case .failure:
-            device = .agentUnavailable
-        case .success(let status):
-            if status.connected {
-                device = .connected(name: status.deviceName ?? "MTP device")
-            } else {
-                switch status.failure {
-                case .deviceBusy?: device = .busy(message: status.message ?? "")
-                case .noDevice?, nil: device = .noDevice
-                default: device = .error(message: status.message ?? "Unknown error")
-                }
-            }
-            if status.sessionID != lastSessionID {
-                if lastSessionID != nil { await signalChange() }
-                lastSessionID = status.sessionID
-            }
-        }
+        rows = []
+        message = "Uninstalled the helper and the Finder locations. You can now move MtpMount to the Trash."
     }
 
     // MARK: - Shortcuts
 
-    /// Open the device's folder in Finder.
-    func showInFinder() async {
-        guard let manager = NSFileProviderManager(for: FP.domain),
+    /// Open a device's folder in Finder.
+    func showInFinder(_ row: DeviceRow) async {
+        guard let manager = FP.manager(forDevice: row.key),
               let url = try? await manager.getUserVisibleURL(for: .rootContainer) else {
             NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/CloudStorage"))

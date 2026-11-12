@@ -13,10 +13,11 @@ import os
 /// from scratch. The agent signals the working set whenever either happens.
 final class Enumerator: NSObject, NSFileProviderEnumerator {
     private let container: NSFileProviderItemIdentifier
-    private let agent = AgentClient.shared
+    private let agent: AgentClient
 
-    init(container: NSFileProviderItemIdentifier) {
+    init(container: NSFileProviderItemIdentifier, agent: AgentClient) {
         self.container = container
+        self.agent = agent
     }
 
     func invalidate() {}
@@ -50,8 +51,8 @@ final class Enumerator: NSObject, NSFileProviderEnumerator {
         guard let from = SyncAnchor(anchor.rawValue) else {
             // We were offline (or the anchor is from an older version): if a
             // device is back, start over; otherwise there's nothing to report.
-            agent.status { result in
-                if SyncAnchor.make(try? result.get()) == anchor.rawValue {
+            agent.overview { result in
+                if SyncAnchor.make((try? result.get())?.device(self.agent.device)) == anchor.rawValue {
                     observer.finishEnumeratingChanges(upTo: anchor, moreComing: false)
                 } else {
                     observer.finishEnumeratingWithError(fpError(.syncAnchorExpired))
@@ -83,8 +84,8 @@ final class Enumerator: NSObject, NSFileProviderEnumerator {
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        agent.status { result in
-            completionHandler(NSFileProviderSyncAnchor(SyncAnchor.make(try? result.get())))
+        agent.overview { result in
+            completionHandler(NSFileProviderSyncAnchor(SyncAnchor.make((try? result.get())?.device(self.agent.device))))
         }
     }
 }

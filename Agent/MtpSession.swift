@@ -7,10 +7,58 @@ private let log = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "libm
 /// libmtp's "top of storage" parent for listing (`LIBMTP_FILES_AND_FOLDERS_ROOT`).
 private let listRootParent: UInt32 = 0xFFFF_FFFF
 
-/// Thin Swift wrapper over libmtp for a single, long-lived device session.
+/// Finds and opens MTP devices over libmtp.
+final class LibmtpBus: MtpBus {
+    /// Raw device records from the last `detect()`, by location.
+    private var raws: [UInt64: LIBMTP_raw_device_t] = [:]
+    /// Sessions whose handle couldn't be released safely; kept alive forever
+    /// because libmtp still holds a pointer to their event inbox.
+    private var abandoned: [MtpSession] = []
+
+    /// Call once per process before any device work.
+    static func initializeLibrary() {
+        LIBMTP_Init()
+    }
+
+    func detect() throws -> [RawDeviceInfo] {
+        var rawList: UnsafeMutablePointer<LIBMTP_raw_device_t>?
+        var count: Int32 = 0
+        let err = LIBMTP_Detect_Raw_Devices(&rawList, &count)
+        defer { if let r = rawList { free(r) } }
+        guard err == LIBMTP_ERROR_NONE || err == LIBMTP_ERROR_NO_DEVICE_ATTACHED else {
+            throw MtpError(.failed, "USB enumeration failed (libmtp error \(err.rawValue)).")
+        }
+        raws = [:]
+        guard let list = rawList, count > 0 else { return [] }
+        return (0..<Int(count)).map { i in
+            let raw = list[i]
+            let info = RawDeviceInfo(location: UInt64(raw.bus_location) << 8 | UInt64(raw.devnum),
+                                     vendor: raw.device_entry.vendor_id,
+                                     product: raw.device_entry.product_id)
+            raws[info.location] = raw
+            return info
+        }
+    }
+
+    func open(_ info: RawDeviceInfo) throws -> MtpDevice {
+        guard var raw = raws[info.location] else {
+            throw MtpError(.noDevice, "The device is no longer attached.")
+        }
+        guard let dev = LIBMTP_Open_Raw_Device_Uncached(&raw) else {
+            throw MtpError(.deviceBusy,
+                "Found a device but couldn't open it. Another app is probably using it (Image Capture, "
+                + "Android File Transfer, OpenMTP or the device maker's sync app) — quit that app and try again.")
+        }
+        let session = try MtpSession(dev, onAbandon: { [weak self] in self?.abandoned.append($0) })
+        return session
+    }
+}
+
+/// Thin Swift wrapper over libmtp for one open device.
 ///
-/// NOT thread-safe: libmtp holds one stateful USB session, so every call must be
-/// serialized onto a single queue by the owner (the agent does this).
+/// NOT thread-safe: libmtp holds stateful USB sessions and one global libusb
+/// context, so every call on every session must be serialized onto a single
+/// queue by the owner (the agent does this).
 /// Uses `LIBMTP_Open_Raw_Device_Uncached` so the whole object tree is *not*
 /// pre-walked on connect — folders are listed on demand with
 /// `LIBMTP_Get_Files_And_Folders`, which is exactly what File Provider wants.
@@ -22,55 +70,18 @@ final class MtpSession: MtpDevice {
     private var device: UnsafeMutablePointer<LIBMTP_mtpdevice_t>?
     /// Storage we browse (the device's first storage).
     private(set) var storageID: UInt32 = 0
-    private var name: String?
-    private var serial: String?
-    /// USB vendor/product of the last device opened, so a reopen sticks with
-    /// the same device when several are attached.
-    private var lastDevice: (vendor: UInt16, product: UInt16)?
+    private let name: String?
+    private let serial: String?
+    private let onAbandon: (MtpSession) -> Void
     /// Receives MTP events from libmtp's async interrupt transfer. Lives as long
     /// as the session object, so the raw pointer handed to libmtp stays valid.
     private let events = EventInbox()
 
-    /// Call once per process before any session work.
-    static func initializeLibrary() {
-        LIBMTP_Init()
-    }
-
-    var isOpen: Bool { device != nil }
-
-    /// Detect and open a connected MTP device, uncached, and pick its first
-    /// storage. With several devices attached, the one opened last time wins,
-    /// otherwise the first one libmtp reports.
-    func open() throws {
-        guard device == nil else { return }
-
-        var rawList: UnsafeMutablePointer<LIBMTP_raw_device_t>?
-        var count: Int32 = 0
-        let err = LIBMTP_Detect_Raw_Devices(&rawList, &count)
-        defer { if let r = rawList { free(r) } }
-        guard err == LIBMTP_ERROR_NONE || err == LIBMTP_ERROR_NO_DEVICE_ATTACHED else {
-            throw MtpError(.failed, "USB enumeration failed (libmtp error \(err.rawValue)).")
-        }
-        guard let raws = rawList, count > 0 else {
-            throw MtpError(.noDevice, "No MTP device detected on USB.")
-        }
-        let candidates = (0..<Int(count)).map { raws + $0 }
-        let previous = lastDevice
-        let raw = candidates.first {
-            $0.pointee.device_entry.vendor_id == previous?.vendor
-                && $0.pointee.device_entry.product_id == previous?.product
-        } ?? candidates[0]
-        if count > 1 {
-            log.warning("\(count) MTP devices attached; only one is shown at a time")
-        }
-
-        guard let dev = LIBMTP_Open_Raw_Device_Uncached(raw) else {
-            throw MtpError(.deviceBusy,
-                "Found the device but couldn't open it. Another app is probably using it (Image Capture, "
-                + "Android File Transfer, OpenMTP or the device maker's sync app) — quit that app and try again.")
-        }
-
-        // Populate dev.pointee.storage.
+    /// Take over an opened device: pick its first storage and start listening
+    /// for events. Releases the device and throws if it reports no storage.
+    fileprivate init(_ dev: UnsafeMutablePointer<LIBMTP_mtpdevice_t>,
+                     onAbandon: @escaping (MtpSession) -> Void) throws {
+        self.onAbandon = onAbandon
         let rc = LIBMTP_Get_Storage(dev, Int32(LIBMTP_STORAGE_SORTBY_NOTSORTED))
         guard rc != -1, let storage = dev.pointee.storage else {
             LIBMTP_Clear_Errorstack(dev)
@@ -83,23 +94,16 @@ final class MtpSession: MtpDevice {
             log.warning("device has several storages; only the first is shown")
         }
         storageID = storage.pointee.id
-        device = dev
-        lastDevice = (raw.pointee.device_entry.vendor_id, raw.pointee.device_entry.product_id)
         name = Self.takeString(LIBMTP_Get_Friendlyname(dev)).flatMap { $0.isEmpty ? nil : $0 }
             ?? Self.takeString(LIBMTP_Get_Modelname(dev))
-        serial = Self.takeString(LIBMTP_Get_Serialnumber(dev))
+        serial = Self.takeString(LIBMTP_Get_Serialnumber(dev)).flatMap { $0.isEmpty ? nil : $0 }
+        device = dev
         LIBMTP_Clear_Errorstack(dev)
-        events.reset()
         armEvents(dev)
     }
 
     @discardableResult
     func close() -> Bool {
-        defer {
-            storageID = 0
-            name = nil
-            serial = nil
-        }
         guard let dev = device else { return true }
         device = nil
         // libmtp can't cancel its pending event transfer, and releasing the
@@ -113,10 +117,10 @@ final class MtpSession: MtpDevice {
         }
         if events.pending {
             log.error("device still has a pending event read; abandoning the handle instead of releasing it")
+            onAbandon(self)
             return false
         }
         LIBMTP_Release_Device(dev)
-        events.reset()
         return true
     }
 

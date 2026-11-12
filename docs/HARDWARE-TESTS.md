@@ -45,11 +45,13 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 
 ## Devices
 - [ ] A device with an SD card (second storage): a warning is logged and the first storage works
-- [ ] Two MTP devices attached: one is shown; after a replug of the same one, it stays the one shown
-- [ ] Swap one device for a different MTP device: Finder re-enumerates instead of showing the old tree
+- [ ] Two MTP devices attached (e.g. phone + GPS): each appears as its own Finder location, named after the device, and both work at the same time
+- [ ] Unplug one of them: its location shows as unavailable, the other keeps working; replug brings it back with current contents
+- [ ] "Forget" on an unplugged device removes its location; it comes back when the device is attached again
+- [ ] With the app closed, attach a never-seen device: its location appears (added by the helper, or by the app launched in the background)
 
 ## Install / uninstall
-- [ ] Upgrading from a build with the old "Garmin Edge" location: it is removed and "MTP Device" appears
+- [ ] Upgrading from a build with the old "Garmin Edge" / "MTP Device" location: it is removed and per-device locations appear
 - [ ] Fresh install from the DMG; run from the DMG first: the app warns to move it to Applications
 - [ ] Move the app after installing: reopening it rewrites and reloads the helper
 - [ ] Troubleshooting → Uninstall… removes `~/Library/LaunchAgents/no.synth.mtpmount.helper.plist` and the Finder location
