@@ -39,8 +39,21 @@ enum Domains {
         case .changed(let status):
             signal(status.key)
         case .lost(let key, let error):
-            log.info("device lost: \(key, privacy: .public) (\(error.rawValue))")
-            signal(key)
+            log.info("device lost: \(key, privacy: .public) (\(error.rawValue)); removing its Finder location")
+            removeDomain(key)
+        }
+    }
+
+    /// Remove a disconnected device's Finder location. The identifier is all
+    /// that matters for removal, so the domain can be rebuilt from the key.
+    private static func removeDomain(_ key: String) {
+        NSFileProviderManager.remove(FP.domain(forDevice: key, name: key)) { error in
+            if let error {
+                log.notice("removing domain \(key, privacy: .public) from the helper failed (\(error.localizedDescription, privacy: .public)); asking the app")
+                launchAppToSyncDomains()
+            } else {
+                log.info("removed domain \(key, privacy: .public)")
+            }
         }
     }
 

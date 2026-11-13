@@ -135,10 +135,6 @@ private struct DeviceRowView: View {
             Spacer()
             Button("Show in Finder") { Task { await controller.showInFinder(row) } }
                 .disabled(!row.connected)
-            if !row.connected {
-                Button("Forget") { Task { await controller.forget(row) } }
-                    .help("Removes this device's location from Finder.")
-            }
         }
     }
 }
