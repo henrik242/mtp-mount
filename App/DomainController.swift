@@ -38,6 +38,11 @@ final class DomainController: ObservableObject {
     /// Last result of a troubleshooting action.
     @Published var message: String?
 
+    /// Something the menu bar icon should badge: setup needed or a device error.
+    var needsAttention: Bool {
+        problem != .none || rows.contains(where: \.needsEnabling) || !isInApplicationsFolder
+    }
+
     private let statusClient = AgentStatusClient()
     /// Session per device last time we looked, to signal domains on changes.
     private var lastSessions: [String: String] = [:]
@@ -170,7 +175,14 @@ final class DomainController: ObservableObject {
 
     /// Ask the agent which devices are attached, add a domain for each new
     /// one, remove domains of older versions, and update the window's rows.
+    /// Guards against overlapping refreshes: several surfaces (menu bar label,
+    /// popover, window) drive this on their own schedules.
+    private var refreshing = false
+
     func refresh() async {
+        if refreshing { return }
+        refreshing = true
+        defer { refreshing = false }
         let overview = await statusClient.overview()
         var domains = (try? await NSFileProviderManager.domains()) ?? []
 
