@@ -79,6 +79,10 @@ final class DomainController: ObservableObject {
             "MachServices": [MtpAgentConfig.machServiceName: true],
             "RunAtLoad": false,
             "ProcessType": "Adaptive",
+            // Link the helper to the app so System Settings' "Allow in the
+            // Background" lists it under the app's name and icon, not a bare
+            // developer entry.
+            "AssociatedBundleIdentifiers": [Bundle.main.bundleIdentifier ?? "no.synth.mtpmount"],
         ]
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
