@@ -236,7 +236,14 @@ struct SyncAnchor: Codable, Equatable {
         return SyncAnchor(serial: status.serial, sessionID: status.sessionID, seq: status.changeSeq).data
     }
 
-    var data: Data { (try? JSONEncoder().encode(self)) ?? SyncAnchor.offline }
+    var data: Data {
+        // Deterministic key order: the anchor is persisted by Finder and
+        // compared as raw bytes (see Enumerator), so the same state must
+        // always encode to the same bytes.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return (try? encoder.encode(self)) ?? SyncAnchor.offline
+    }
 
     /// Decode an anchor; nil for `offline` or anything unrecognised.
     init?(_ data: Data) {
