@@ -24,6 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if isSyncLaunch { NSApp.terminate(nil) }
         }
     }
+
+    /// A menu-bar app must outlive its windows (and its popover): closing the
+    /// last one must not quit it, or it would vanish from the menu bar.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
 @main
@@ -44,6 +48,8 @@ struct MtpMountApp: App {
         Window("MtpMount", id: "status") {
             StatusWindow().environmentObject(appDelegate.controller)
                 .frame(minWidth: 460, minHeight: 320)
+                .onAppear(perform: showWindowChrome)
+                .onDisappear(perform: hideWindowChromeWhenIdle)
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 480, height: 400)
@@ -51,7 +57,26 @@ struct MtpMountApp: App {
 
         Settings {
             TroubleshootingView().environmentObject(appDelegate.controller)
+                .onAppear(perform: showWindowChrome)
+                .onDisappear(perform: hideWindowChromeWhenIdle)
         }
+    }
+}
+
+/// A menu-bar app has no menu bar of its own. So while one of our real windows
+/// is open, become a regular app (menu bar + Dock icon appear); when the last
+/// one closes, drop back to accessory (menu-bar-only, no Dock icon).
+@MainActor private func showWindowChrome() {
+    NSApp.setActivationPolicy(.regular)
+    NSApp.activate(ignoringOtherApps: true)
+}
+
+@MainActor private func hideWindowChromeWhenIdle() {
+    Task { @MainActor in
+        // Let the closing window leave `windows` first.
+        try? await Task.sleep(for: .milliseconds(150))
+        let hasTitledWindow = NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) }
+        if !hasTitledWindow { NSApp.setActivationPolicy(.accessory) }
     }
 }
 
@@ -88,7 +113,7 @@ private struct MenuContent: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("MtpMount").font(.headline)
 
-            WarningsView()
+            WarningsView(compact: true)
 
             if controller.rows.isEmpty {
                 Label(controller.checked ? "No device connected" : "Checking for devices…",
@@ -172,6 +197,7 @@ private struct StatusWindow: View {
 /// The actionable warnings, shared by the popover and the window.
 private struct WarningsView: View {
     @EnvironmentObject var controller: DomainController
+    var compact: Bool = false
 
     var body: some View {
         if !controller.isInApplicationsFolder {
@@ -189,9 +215,15 @@ private struct WarningsView: View {
         }
         ProblemNotice(problem: controller.problem)
         if !controller.ignoredDevices.isEmpty {
-            Notice(symbol: "camera", tint: .secondary,
-                   title: "Left to Image Capture: " + controller.ignoredDevices.joined(separator: ", "),
-                   detail: "Cameras are for Photos and Image Capture, so MtpMount doesn't open them.")
+            if compact {
+                Label("Left to Image Capture: " + controller.ignoredDevices.joined(separator: ", "),
+                      systemImage: "camera")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                Notice(symbol: "camera", tint: .secondary,
+                       title: "Left to Image Capture: " + controller.ignoredDevices.joined(separator: ", "),
+                       detail: "Cameras are for Photos and Image Capture, so MtpMount doesn't open them.")
+            }
         }
     }
 }
