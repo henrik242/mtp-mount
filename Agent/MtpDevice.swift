@@ -87,10 +87,15 @@ enum LibmtpErrorKind: Equatable {
 
 enum MtpErrorClassifier {
     /// PTP response codes that libmtp formats as "PTP Layer error %04x: …".
-    /// 0x02Fx are libgphoto2's internal transport errors (I/O, timeout, …);
-    /// 0x20xx are responses from the device itself.
+    /// 0x02Fx are libgphoto2's internal errors and 0x20xx are responses from
+    /// the device itself. Only 0x02ff (I/O) means the transport is actually
+    /// dead; the other 0x02Fx (e.g. 0x02fe "Data Expected") are the device
+    /// aborting a single operation — a bad ObjectInfo, an unsupported name —
+    /// with the USB link still alive, so they stay `.failed` and the liveness
+    /// probe in `failure()` decides, instead of needlessly dropping the device.
     private static let ptpCodes: [(String, MtpFailure)] = [
-        ("02f", .disconnected),     // PTP_ERROR_IO / TIMEOUT / CANCEL / …
+        ("02ff", .disconnected),    // PTP_ERROR_IO — transport is dead
+        ("02fa", .disconnected),    // PTP_ERROR_TIMEOUT — transport hung
         ("2009", .noSuchObject),    // Invalid_ObjectHandle
         ("2005", .unsupported),     // Operation_Not_Supported
         ("200c", .storageFull),     // Store_Full
