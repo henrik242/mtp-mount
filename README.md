@@ -5,7 +5,8 @@ phones, GPS units, cameras, music players, e-readers — as a browsable macOS
 volume, using Apple's **File Provider** API. No kernel
 extension, no reboot: the device appears in Finder's sidebar (under Locations)
 and under `~/Library/CloudStorage/`, and is usable from the Terminal (`ls`, `cp`,
-`rsync`).
+`rsync`). The device I/O is a self-contained PTP/MTP implementation over Apple's
+**IOUSBHost** — no libmtp, no third-party dependencies.
 
 Requires an Apple Silicon Mac on the latest macOS.
 
@@ -55,23 +56,6 @@ Open MtpMount, choose **Troubleshooting → Uninstall…**, then move MtpMount t
 the Trash. (That removes the helper's LaunchAgent,
 `~/Library/LaunchAgents/no.synth.mtpmount.helper.plist`, and the Finder
 locations.)
-
-## Status
-
-- **Phase 0 (done):** signed File Provider app + extension serving a static test
-  tree, proving the full macOS pipeline (signing, provisioning, entitlements,
-  app group, replicated classification, enablement, enumeration, content fetch).
-- **Phase 1 (done):** the extension serves the **real device** over a background
-  agent + XPC. Browse the device in Finder and the Terminal and copy files off it
-  (`ls`, `cp`, `rsync`).
-- **Phase 2 (done):** read **/write**. Upload files, create folders, rename,
-  move, and delete — all from Finder
-  or the Terminal. In-place content edits aren't offered (MTP has no partial
-  write; an edit would change the object id).
-- **Native MTP (done):** the agent talks to devices with its own PTP/MTP
-  implementation over **IOUSBHost** (a system framework) — no libmtp, no
-  third-party dylibs. The app is Developer ID signed, hardened, notarized and
-  stapled. See [Packaging & notarization](#packaging--notarization).
 
 ## Architecture
 
