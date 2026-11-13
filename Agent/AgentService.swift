@@ -110,6 +110,15 @@ final class AgentService: NSObject, MtpAgentXPC {
         ignored = ignored.filter { attachedLocations.contains($0.key) }
         let openLocations = Set(devices.values.map(\.raw.location))
         for raw in attached where !openLocations.contains(raw.location) && ignored[raw.location] == nil {
+            // A PTP still-image camera (or a phone in "Photos"/PTP mode) can't
+            // be opened as an MTP file device, and claiming it only keeps Image
+            // Capture and Photos from it. Recognise it from its USB descriptors
+            // and leave it alone, before any backend opens (and claims) it.
+            if let camera = UsbClass.ptpCameraName(vendor: raw.vendor, product: raw.product) {
+                log.info("leaving PTP camera alone (no MTP interface): \(camera, privacy: .public)")
+                ignored[raw.location] = camera
+                continue
+            }
             let device: MtpDevice
             do {
                 device = try bus.open(raw)

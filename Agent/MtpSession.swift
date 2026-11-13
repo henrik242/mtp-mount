@@ -51,14 +51,6 @@ final class LibmtpBus: MtpBus {
         guard var raw = raws[info.location] else {
             throw MtpError(.noDevice, "The device is no longer attached.")
         }
-        // A PTP still-image camera (or a phone in "Photos"/PTP mode) can't be
-        // usefully opened over libmtp, and claiming it only keeps Image Capture
-        // and Photos from it. Recognise it from its USB descriptors and leave it
-        // alone, the same as a device whose storage is all DCF (see MtpSession).
-        if let camera = UsbClass.ptpCameraName(vendor: info.vendor, product: info.product) {
-            log.info("leaving PTP camera alone (no MTP interface): \(camera, privacy: .public)")
-            throw MtpError(.notFileDevice, camera)
-        }
         guard let dev = LIBMTP_Open_Raw_Device_Uncached(&raw) else {
             throw MtpError(.deviceBusy,
                 "Found a device but couldn't open it. Another app is probably using it (Image Capture, "

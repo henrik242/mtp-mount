@@ -107,6 +107,7 @@ targets:
       - Shared/Ids.swift
       - Agent/MtpDevice.swift
       - Agent/AgentService.swift
+      - Agent/UsbClass.swift
       - Agent/MTP/PTPCodec.swift
       - Agent/MTP/PTPSession.swift
       - Extension/Model.swift
