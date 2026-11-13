@@ -22,6 +22,9 @@ final class AgentService: NSObject, MtpAgentXPC {
     private let queue: DispatchQueue
     private let bus: MtpBus
     private let now: () -> Date
+    /// Names an attached device that's a PTP still-image camera (no MTP
+    /// interface) from its USB descriptors, or nil. Injectable for tests.
+    private let ptpCameraName: (_ vendor: UInt16, _ product: UInt16) -> String?
     /// Distinguishes this agent process, so session ids never repeat across restarts.
     private let instance = UUID().uuidString.prefix(8)
     private var epoch = 0
@@ -31,6 +34,11 @@ final class AgentService: NSObject, MtpAgentXPC {
     /// Attached cameras (not file devices), by location, with their names.
     /// They aren't opened again until they're detached.
     private var ignored: [UInt64: String] = [:]
+    /// Which `ignored` entries are there because the device's USB descriptors
+    /// say "PTP camera" (vs. a DCF-only storage found by opening it). These are
+    /// re-checked each scan, so a phone leaving PTP mode is noticed without a
+    /// replug; DCF cameras stay put until detached (opening them is expensive).
+    private var ptpCameras: Set<UInt64> = []
     private var devices: [String: OpenDevice] = [:]
     private var eventTimer: DispatchSourceTimer?
 
@@ -50,10 +58,12 @@ final class AgentService: NSObject, MtpAgentXPC {
 
     init(bus: MtpBus,
          queue: DispatchQueue = DispatchQueue(label: "no.synth.mtpmount.agent.mtp"),
-         now: @escaping () -> Date = Date.init) {
+         now: @escaping () -> Date = Date.init,
+         ptpCameraName: @escaping (UInt16, UInt16) -> String? = UsbClass.ptpCameraName) {
         self.bus = bus
         self.queue = queue
         self.now = now
+        self.ptpCameraName = ptpCameraName
     }
 
     // MARK: - Devices
@@ -107,16 +117,28 @@ final class AgentService: NSObject, MtpAgentXPC {
             return
         }
         let attachedLocations = Set(attached.map(\.location))
+        // Re-read the descriptors of devices we left to Image Capture as PTP
+        // cameras (cheap, no open). One that no longer looks like a camera --
+        // a phone switched from "Photos"/PTP to "File transfer" -- drops out of
+        // the ignore set and is opened below, without waiting for a replug.
+        for raw in attached where ptpCameras.contains(raw.location) {
+            if ptpCameraName(raw.vendor, raw.product) == nil {
+                ignored[raw.location] = nil
+                ptpCameras.remove(raw.location)
+            }
+        }
         ignored = ignored.filter { attachedLocations.contains($0.key) }
+        ptpCameras = ptpCameras.intersection(attachedLocations)
         let openLocations = Set(devices.values.map(\.raw.location))
         for raw in attached where !openLocations.contains(raw.location) && ignored[raw.location] == nil {
             // A PTP still-image camera (or a phone in "Photos"/PTP mode) can't
             // be opened as an MTP file device, and claiming it only keeps Image
             // Capture and Photos from it. Recognise it from its USB descriptors
             // and leave it alone, before any backend opens (and claims) it.
-            if let camera = UsbClass.ptpCameraName(vendor: raw.vendor, product: raw.product) {
+            if let camera = ptpCameraName(raw.vendor, raw.product) {
                 log.info("leaving PTP camera alone (no MTP interface): \(camera, privacy: .public)")
                 ignored[raw.location] = camera
+                ptpCameras.insert(raw.location)
                 continue
             }
             let device: MtpDevice
