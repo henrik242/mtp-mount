@@ -81,6 +81,7 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 
 ## Licensing & native MTP
 - [x] App licensed GPL-2.0-or-later; LGPL notices for bundled libmtp/libusb shipped in the app and the DMG
-- [x] Native PTP/MTP implementation over IOUSBHost (`--backend native`), selectable in the app; libmtp stays the default until it's verified on hardware
-- [ ] Make the native backend the default and drop libmtp/libusb (after hardware tests on a phone and a GPS)
+- [x] Native PTP/MTP implementation over IOUSBHost (`--backend native`), selectable in the app
+- [x] Native backend is now the default (verified on hardware: browse/read/write a Garmin Edge 1040; leaves a phone in PTP mode to Image Capture). libmtp stays bundled and selectable during the transition.
+- [ ] Exercise native on more hardware paths (phone in File-transfer mode: events/photo-change, large/cancel transfers), then drop libmtp/libusb
 - [x] libmtp path: create files/folders at the root with parent 0xFFFFFFFF (Android rejects 0)
