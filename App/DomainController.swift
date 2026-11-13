@@ -178,6 +178,9 @@ final class DomainController: ObservableObject {
     /// Guards against overlapping refreshes: several surfaces (menu bar label,
     /// popover, window) drive this on their own schedules.
     private var refreshing = false
+    /// Set once we've reinstalled a stale helper, so we don't loop if the
+    /// on-disk helper somehow stays out of date.
+    private var staleHelperHandled = false
 
     func refresh() async {
         if refreshing { return }
@@ -194,6 +197,7 @@ final class DomainController: ObservableObject {
 
         let attached: [DeviceStatus]
         let agentResponsive: Bool
+        var runningAgentVersion = ""
         switch overview {
         case .failure:
             attached = []
@@ -203,12 +207,24 @@ final class DomainController: ObservableObject {
         case .success(let o):
             attached = o.devices
             agentResponsive = true
+            runningAgentVersion = o.agentVersion
             ignoredDevices = o.ignoredDevices
             switch o.problem {
             case .deviceBusy?: problem = .busy(message: o.message ?? "")
             case nil, .noDevice?: problem = .none
             default: problem = .error(message: o.message ?? "Unknown error")
             }
+        }
+
+        // A stale helper (an old binary still bootstrapped after an app update)
+        // reports a different version than the app. Reinstall it once to load
+        // the new binary; the next refresh then sees a matching version.
+        if agentResponsive, !staleHelperHandled,
+           !runningAgentVersion.isEmpty, runningAgentVersion != MtpAgentConfig.bundleVersion {
+            staleHelperHandled = true
+            log.info("helper is version \(runningAgentVersion, privacy: .public) but app is \(MtpAgentConfig.bundleVersion, privacy: .public); reinstalling the helper")
+            await registerAgent(force: true)
+            return
         }
 
         for device in attached where !domains.contains(where: { $0.identifier.rawValue == device.key }) {

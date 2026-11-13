@@ -392,7 +392,8 @@ final class AgentService: NSObject, MtpAgentXPC {
                 devices: self.devices.values.map(\.status).sorted { $0.name < $1.name },
                 problem: self.problem?.kind,
                 message: self.problem?.message,
-                ignoredDevices: self.ignored.values.sorted())
+                ignoredDevices: self.ignored.values.sorted(),
+                agentVersion: MtpAgentConfig.bundleVersion)
             reply(try? Self.encode(overview))
         }
     }

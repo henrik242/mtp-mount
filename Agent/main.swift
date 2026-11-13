@@ -109,7 +109,7 @@ enum Domains {
 // MARK: - Entry point
 
 // Our own PTP/MTP implementation over IOUSBHost.
-log.info("mtpmount-agent starting; vending \(MtpAgentConfig.machServiceName, privacy: .public)")
+log.info("mtpmount-agent \(MtpAgentConfig.bundleVersion, privacy: .public) starting; vending \(MtpAgentConfig.machServiceName, privacy: .public)")
 
 let bus: MtpBus = NativeMtpBus()
 let service = AgentService(bus: bus)
