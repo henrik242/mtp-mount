@@ -5,8 +5,8 @@ import os
 
 private let log = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "app")
 
-/// A device as the window shows it: attached now, or known from an earlier
-/// connection (its Finder location stays until the user forgets it).
+/// A device as the window shows it. A location exists only while its device is
+/// attached, so a row is normally connected.
 struct DeviceRow: Identifiable, Equatable {
     var id: String { key }
     let key: String
@@ -150,9 +150,9 @@ final class DomainController: ObservableObject {
 
     // MARK: - Domains
 
-    /// Install the helper and bring the domains up to date. Safe to call on
-    /// every launch: existing domains (and their downloaded files / pending
-    /// uploads) are kept.
+    /// Install the helper and bring the domains up to date: a location for each
+    /// attached device, and none for devices that are gone. Downloaded files and
+    /// pending uploads of a still-attached device are kept.
     func register() async {
         await registerAgent()
         await refresh()
@@ -171,13 +171,16 @@ final class DomainController: ObservableObject {
         domains.removeAll { FP.legacyDomainIdentifiers.contains($0.identifier.rawValue) }
 
         let attached: [DeviceStatus]
+        let agentResponsive: Bool
         switch overview {
         case .failure:
             attached = []
+            agentResponsive = false
             ignoredDevices = []
             problem = .agentUnavailable
         case .success(let o):
             attached = o.devices
+            agentResponsive = true
             ignoredDevices = o.ignoredDevices
             switch o.problem {
             case .deviceBusy?: problem = .busy(message: o.message ?? "")
@@ -195,6 +198,20 @@ final class DomainController: ObservableObject {
             } catch {
                 message = "Couldn't add “\(device.name)” to Finder: \(error.localizedDescription)"
             }
+        }
+
+        // A disconnected device's location is removed (the agent does this in
+        // real time; this reconciles the case where it was unplugged while the
+        // app was closed, or the helper's own removal was refused). Only when
+        // the helper answered -- an unavailable helper doesn't mean every
+        // device is gone.
+        if agentResponsive {
+            let attachedKeys = Set(attached.map(\.key))
+            for domain in domains where FP.deviceKey(of: domain) != nil && !attachedKeys.contains(domain.identifier.rawValue) {
+                log.info("removing location for detached device \(domain.identifier.rawValue, privacy: .public)")
+                try? await NSFileProviderManager.remove(domain)
+            }
+            domains.removeAll { FP.deviceKey(of: $0) != nil && !attachedKeys.contains($0.identifier.rawValue) }
         }
 
         // Signal domains whose device session changed (attached, replugged,
@@ -215,17 +232,6 @@ final class DomainController: ObservableObject {
                              needsEnabling: !domain.userEnabled)
         }.sorted { ($0.connected ? 0 : 1, $0.name) < ($1.connected ? 0 : 1, $1.name) }
         checked = true
-    }
-
-    /// Remove a device's Finder location (it comes back when the device is
-    /// attached again).
-    func forget(_ row: DeviceRow) async {
-        do {
-            try await NSFileProviderManager.remove(FP.domain(forDevice: row.key, name: row.name))
-        } catch {
-            message = "Couldn't remove “\(row.name)”: \(error.localizedDescription)"
-        }
-        await refresh()
     }
 
     /// Troubleshooting: purge every domain of this provider, reinstall the

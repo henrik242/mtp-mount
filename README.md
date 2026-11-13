@@ -29,9 +29,8 @@ and delete files and folders. Changes made on the device while it's connected
 (a new photo, say) show up in Finder within a few seconds. Several devices can
 be connected at once; each gets its own location. Cameras are left alone (for
 Photos and Image Capture): a device whose storage is all in the camera file
-system (DCF) is released right away. A device's location stays
-(shown as unavailable) when it's unplugged and comes back when you reconnect
-it; **Forget** in the window removes it. Editing a file in place on the device isn't
+system (DCF) is released right away. A device's location is removed when you
+unplug it and reappears when you reconnect. Editing a file in place on the device isn't
 possible (MTP has no partial writes): copy it to your Mac, edit it, copy it back.
 
 ### Troubleshooting

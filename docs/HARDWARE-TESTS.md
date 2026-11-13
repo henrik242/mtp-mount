@@ -12,8 +12,8 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 ## Connect / disconnect
 - [ ] Plug in with the app closed: the location appears in Finder within a few seconds
 - [ ] App window shows "Connected: <device name>"
-- [ ] Unplug while idle: app shows "No device connected"; Finder shows the device as offline rather than empty, and nothing is deleted locally
-- [ ] Replug: Finder re-enumerates (sync anchor expired) and shows current contents without restarting anything
+- [ ] Unplug while idle: app shows "No device connected" and the device's location disappears from Finder
+- [ ] Replug: the location reappears and shows current contents without restarting anything
 - [ ] Phone locked / USB mode "Charging only": app explains to unlock and choose "File transfer"; switching mode connects without replugging
 - [ ] Open Image Capture / Android File Transfer / a vendor sync app first, then plug in: app shows "in use by another app" with the hint; quitting that app and replugging recovers
 - [ ] Sleep the Mac with the device attached, wake: first browse works (or recovers on the next try)
@@ -46,8 +46,8 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 ## Devices
 - [ ] A device with an SD card (second storage): a warning is logged and the first storage works
 - [ ] Two MTP devices attached (e.g. phone + GPS): each appears as its own Finder location, named after the device, and both work at the same time
-- [ ] Unplug one of them: its location shows as unavailable, the other keeps working; replug brings it back with current contents
-- [ ] "Forget" on an unplugged device removes its location; it comes back when the device is attached again
+- [ ] Unplug one of them: its location disappears, the other keeps working; replug brings it back with current contents
+- [ ] A device unplugged while the app is closed leaves no stale location behind on the next launch
 - [ ] With the app closed, attach a never-seen device: its location appears (added by the helper, or by the app launched in the background)
 
 - [ ] An MTP camera (or a phone switched to PTP/"Transfer photos" mode with only DCIM): not opened, listed as "Left to Image Capture", and Image Capture/Photos can import from it
