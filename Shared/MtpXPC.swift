@@ -67,6 +67,8 @@ struct AgentOverview: Codable, Equatable {
     var message: String?
     /// Names of attached cameras that were left alone (see `.notFileDevice`).
     var ignoredDevices: [String] = []
+    /// The running helper's own version, so the app can spot a stale helper.
+    var agentVersion: String = ""
 
     func device(_ key: String) -> DeviceStatus? { devices.first { $0.key == key } }
 }
@@ -110,6 +112,12 @@ enum MtpAgentConfig {
     static let teamID = "358L7UXVJ4"
     /// Logging subsystem shared by all components.
     static let logSubsystem = "no.synth.mtpmount"
+    /// This build's marketing version, from the component's own Info.plist. The
+    /// app compares the running helper's value against its own to notice a stale
+    /// helper (e.g. after an update) and reinstall it.
+    static var bundleVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
     /// Launch argument that makes the app add domains for attached devices
     /// and quit (used by the agent when it may not add domains itself).
     static let syncDomainsArgument = "--sync-domains"
