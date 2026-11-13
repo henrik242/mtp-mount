@@ -188,7 +188,10 @@ final class USBTransport: PTPTransport {
         var buffer: NSMutableData?
         if !data.isEmpty {
             let io = try ioBuffer(data.count)
-            data.withUnsafeBytes { io.mutableBytes.copyMemory(from: $0.baseAddress!, byteCount: data.count) }
+            // No withUnsafeBytes closure here: Xcode 26.6 compiled it to leave
+            // the buffer in the Swift error register (x21), so every write
+            // "threw" its own buffer and over-released it.
+            data.copyBytes(to: io.mutableBytes.assumingMemoryBound(to: UInt8.self), count: data.count)
             buffer = io
         }
         let sent = try transfer(bulkOut, buffer)
@@ -255,10 +258,7 @@ final class USBTransport: PTPTransport {
         return moved
     }
 
-    /// One blocking request; returns its status and the bytes moved. Uses
-    /// IOUSBHost's synchronous call: the release built with Xcode 26.6 lost
-    /// completions of enqueued requests on macOS 27 and then over-released
-    /// the buffer when the request timed out.
+    /// One blocking request; returns its status and the bytes moved.
     private func submit(_ pipe: IOUSBHostPipe, _ buffer: NSMutableData?,
                         timeout: TimeInterval) -> (IOReturn, Int) {
         var moved = 0
