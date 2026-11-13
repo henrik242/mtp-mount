@@ -121,7 +121,7 @@ enum MtpAgentConfig {
         case libmtp
 
         static let argument = "--backend"
-        static let `default` = Backend.libmtp
+        static let `default` = Backend.native
 
         init(arguments: [String]) {
             if let i = arguments.firstIndex(of: Self.argument), i + 1 < arguments.count,
