@@ -180,6 +180,37 @@ final class AgentServiceTests: XCTestCase {
         XCTAssertEqual(overview().ignoredDevices, ["Camera X"])
     }
 
+    func testPtpCameraReopensWhenItLeavesPtpMode() {
+        // A device whose USB descriptors say "PTP camera" is left alone (never
+        // opened). When it stops being a camera -- a phone switching from
+        // "Photos"/PTP to "File transfer" -- the next scan opens it, no replug.
+        var inPtpMode = true
+        let svc = AgentService(bus: bus, now: { [unowned self] in self.clock },
+                               ptpCameraName: { vendor, _ in (inPtpMode && vendor == 0x1111) ? "PTP Cam" : nil })
+        let cam = bus.attach(FakeDevice(name: "Cam", serial: "C1", location: 7, vendor: 0x1111, product: 0x2))
+
+        func scan() {
+            let done = expectation(description: "hotplug")
+            svc.usbDevicesChanged { done.fulfill() }
+            wait(for: [done], timeout: 5)
+        }
+        func ov() -> AgentOverview {
+            let data: Data? = call { reply in svc.overview { reply($0) } }
+            return try! JSONDecoder().decode(AgentOverview.self, from: data!)
+        }
+
+        scan()
+        XCTAssertEqual(ov().ignoredDevices, ["PTP Cam"])
+        XCTAssertFalse(ov().devices.contains { $0.key == cam.key }, "a PTP camera isn't opened")
+        let opensBefore = bus.openCount
+
+        inPtpMode = false   // the phone switched to File transfer
+        scan()
+        XCTAssertEqual(ov().ignoredDevices, [], "no longer a camera")
+        XCTAssertTrue(ov().devices.contains { $0.key == cam.key }, "opened without a replug")
+        XCTAssertEqual(bus.openCount, opensBefore + 1, "opened exactly once on the mode switch")
+    }
+
     func testOverviewNoticesDeadLink() {
         XCTAssertNotNil(status())
         bus.detach(phone)
