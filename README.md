@@ -150,7 +150,7 @@ APP=build-release/Build/Products/Release/MtpMount.app
 scripts/bundle-and-sign.sh "$APP" --timestamp
 
 export NOTARY_KEY=/path/to/AuthKey_XXXX.p8 NOTARY_KEY_ID=XXXX NOTARY_ISSUER=<uuid>
-scripts/make-dmg.sh "$APP" dist/MtpMount-0.2.1.dmg --notarize
+scripts/make-dmg.sh "$APP" dist/MtpMount-0.2.2.dmg --notarize
 ```
 
 The result passes `spctl -a -t open --context context:primary-signature` and is
