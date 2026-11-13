@@ -11,6 +11,7 @@ private enum IOReturnCode {
     static let success: Int32 = 0
     static let exclusiveAccess = Int32(bitPattern: 0xE000_02C5)
     static let aborted = Int32(bitPattern: 0xE000_02EB)
+    static let timeout = Int32(bitPattern: 0xE000_02D6)
 }
 
 /// Finds MTP interfaces in the IOKit registry and opens them with IOUSBHost.
@@ -89,10 +90,10 @@ final class NativeMtpBus: MtpBus {
 
 /// Bulk/interrupt I/O on one PTP/MTP interface via IOUSBHost.
 ///
-/// Synchronous calls are built from IOUSBHost's asynchronous requests: their
-/// completions run on this transport's own queue, so waiting for them on the
-/// agent's queue can't deadlock. Closing destroys the interface, which aborts
-/// every pending request — including the event read — so nothing outlives it.
+/// Bulk transfers use IOUSBHost's blocking calls on the agent's queue; only
+/// the event read is asynchronous, with its completions on this transport's
+/// own queue. Closing destroys the interface, which aborts every pending
+/// request - including the event read - so nothing outlives it.
 final class USBTransport: PTPTransport {
     private let interface: IOUSBHostInterface
     private let bulkIn: IOUSBHostPipe
@@ -103,6 +104,12 @@ final class USBTransport: PTPTransport {
     /// How long one bulk transfer may take (a big folder can make a device
     /// think for a while before answering).
     private let timeout: TimeInterval = 60
+    /// How long to wait for leftovers when draining at open.
+    private static let drainTimeout: TimeInterval = 0.2
+    /// Set after the first failed transfer: the pipes may be halted or out of
+    /// step with the device, so later I/O fails at once instead of waiting
+    /// out another timeout. The owner reopens the device.
+    private var broken: MtpError?
 
     private let lock = NSLock()
     private var events: [Data] = []
@@ -157,7 +164,20 @@ final class USBTransport: PTPTransport {
             throw MtpError(.noDevice, "Couldn't open the USB endpoints: \(error.localizedDescription)")
         }
         maxPacketSize = max(packet, 64)
+        drainStaleInput()
         armEventRead()
+    }
+
+    /// Read off whatever an earlier session left unread. Android won't accept
+    /// a new command while its last response is still queued, so a leftover
+    /// from a timed-out or killed session would stall every later open.
+    private func drainStaleInput() {
+        for _ in 0..<16 {
+            guard let io = try? ioBuffer(maxPacketSize) else { return }
+            let (status, moved) = submit(bulkIn, io, timeout: Self.drainTimeout)
+            guard status == IOReturnCode.success, moved > 0 else { return }
+            log.notice("discarded \(moved) stale bytes from the device")
+        }
     }
 
     deinit { close() }
@@ -220,27 +240,34 @@ final class USBTransport: PTPTransport {
         }
     }
 
-    /// One synchronous transfer; returns the number of bytes moved.
+    /// One synchronous transfer; returns the number of bytes moved. The first
+    /// failure breaks the transport for good.
     private func transfer(_ pipe: IOUSBHostPipe, _ buffer: NSMutableData?) throws -> Int {
-        let done = DispatchSemaphore(value: 0)
-        var status: IOReturn = IOReturnCode.success
-        var moved = 0
-        do {
-            try pipe.enqueueIORequest(with: buffer, completionTimeout: timeout) { result, bytes in
-                status = result
-                moved = bytes
-                done.signal()
-            }
-        } catch {
-            throw MtpError(.disconnected, "USB request failed: \(error.localizedDescription)")
-        }
-        if done.wait(timeout: .now() + timeout + 5) == .timedOut {
-            throw MtpError(.disconnected, "The device stopped responding.")
-        }
+        if let broken { throw broken }
+        let (status, moved) = submit(pipe, buffer, timeout: timeout)
         guard status == IOReturnCode.success else {
-            throw MtpError(.disconnected, String(format: "USB transfer failed (IOReturn 0x%08X).", UInt32(bitPattern: status)))
+            let e = MtpError(.disconnected, status == IOReturnCode.timeout
+                ? "The device didn't answer. Unlock it, and on a phone allow access to its data if asked."
+                : String(format: "USB transfer failed (IOReturn 0x%08X).", UInt32(bitPattern: status)))
+            broken = e
+            throw e
         }
         return moved
+    }
+
+    /// One blocking request; returns its status and the bytes moved. Uses
+    /// IOUSBHost's synchronous call: the release built with Xcode 26.6 lost
+    /// completions of enqueued requests on macOS 27 and then over-released
+    /// the buffer when the request timed out.
+    private func submit(_ pipe: IOUSBHostPipe, _ buffer: NSMutableData?,
+                        timeout: TimeInterval) -> (IOReturn, Int) {
+        var moved = 0
+        do {
+            try pipe.__sendIORequest(with: buffer, bytesTransferred: &moved, completionTimeout: timeout)
+            return (IOReturnCode.success, moved)
+        } catch {
+            return (IOReturn(truncatingIfNeeded: (error as NSError).code), moved)
+        }
     }
 
     /// Keep one interrupt read outstanding; each completion queues an event
