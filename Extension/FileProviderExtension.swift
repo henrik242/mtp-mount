@@ -6,7 +6,7 @@ import os
 let extLog = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "ext")
 
 /// The replicated File Provider extension. Delegates all device I/O to the
-/// non-sandboxed libmtp agent over XPC (see `AgentClient`).
+/// non-sandboxed agent over XPC (see `AgentClient`).
 ///
 /// Supported: browse, download, upload, create folder, rename, move, delete.
 /// Not supported (MTP has no partial writes and a re-upload changes the object

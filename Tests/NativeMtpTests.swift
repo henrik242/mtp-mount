@@ -258,9 +258,4 @@ final class NativeMtpDeviceTests: XCTestCase {
         XCTAssertThrowsError(try device.list(parent: 0))
     }
 
-    func testBackendArgument() {
-        XCTAssertEqual(MtpAgentConfig.Backend(arguments: ["agent"]), .default)
-        XCTAssertEqual(MtpAgentConfig.Backend(arguments: ["agent", "--backend", "native"]), .native)
-        XCTAssertEqual(MtpAgentConfig.Backend(arguments: ["agent", "--backend", "bogus"]), .default)
-    }
 }

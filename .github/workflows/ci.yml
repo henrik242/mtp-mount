@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: brew install xcodegen libmtp
+        run: brew install xcodegen
       - name: Toolchain
         run: xcodebuild -version && sw_vers
       - name: Generate Xcode project
@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: brew install xcodegen libmtp
+        run: brew install xcodegen
 
       - name: Import certificate to a temporary keychain
         env:
@@ -137,7 +137,7 @@ jobs:
           xcodebuild -project MtpMount.xcodeproj -scheme MtpMount \
             -configuration Release -derivedDataPath build-release build
 
-      - name: Bundle libmtp, sign, notarize, DMG
+      - name: Sign, notarize, DMG
         env:
           NOTARY_KEY: ${{ runner.temp }}/notary.p8
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}

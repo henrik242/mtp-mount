@@ -3,7 +3,7 @@ import Foundation
 
 /// One entry (file or folder) in the MTP object tree. Shared wire type: the agent
 /// encodes `[MtpEntry]` as JSON, the extension decodes it. Foundation-only so the
-/// sandboxed extension never links libmtp.
+/// sandboxed extension never touches USB.
 struct MtpEntry: Codable, Equatable {
     var id: UInt32
     var parentID: UInt32
@@ -102,7 +102,7 @@ struct ChangeSet: Codable, Equatable {
     var deleted: [UInt32]
 }
 
-/// Shared configuration + XPC contract between the non-sandboxed libmtp agent
+/// Shared configuration + XPC contract between the non-sandboxed agent
 /// and the sandboxed File Provider extension. Foundation-only on purpose so the
 /// command-line agent target doesn't have to link FileProvider.
 enum MtpAgentConfig {
@@ -113,25 +113,6 @@ enum MtpAgentConfig {
     /// Launch argument that makes the app add domains for attached devices
     /// and quit (used by the agent when it may not add domains itself).
     static let syncDomainsArgument = "--sync-domains"
-    /// The helper's MTP implementation, chosen by `--backend <name>`.
-    enum Backend: String, CaseIterable {
-        /// Our own PTP/MTP over IOUSBHost.
-        case native
-        /// libmtp + libusb.
-        case libmtp
-
-        static let argument = "--backend"
-        static let `default` = Backend.native
-
-        init(arguments: [String]) {
-            if let i = arguments.firstIndex(of: Self.argument), i + 1 < arguments.count,
-               let backend = Backend(rawValue: arguments[i + 1]) {
-                self = backend
-            } else {
-                self = .default
-            }
-        }
-    }
 
     /// File name of the helper executable in Contents/MacOS.
     static let agentExecutable = "mtpmount-agent"

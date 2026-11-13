@@ -79,9 +79,9 @@ Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
 - [x] One Finder location per device (named after it), so several devices can be mounted at once; older shared domains are removed
 - [x] Cameras (all storage in the DCF camera file system) are released right after opening and left to Image Capture/Photos until detached
 
-## Licensing & native MTP
-- [x] App licensed GPL-2.0-or-later; LGPL notices for bundled libmtp/libusb shipped in the app and the DMG
-- [x] Native PTP/MTP implementation over IOUSBHost (`--backend native`), selectable in the app
-- [x] Native backend is now the default (verified on hardware: browse/read/write a Garmin Edge 1040; leaves a phone in PTP mode to Image Capture). libmtp stays bundled and selectable during the transition.
-- [ ] Exercise native on more hardware paths (phone in File-transfer mode: events/photo-change, large/cancel transfers), then drop libmtp/libusb
+## Native MTP (libmtp removed)
+- [x] App licensed GPL-2.0-or-later
+- [x] Native PTP/MTP implementation over IOUSBHost — the only backend
+- [x] Validated on hardware: Garmin Edge 1040 (browse/read/write) and Galaxy S25 (browse/read, 242 MB download + 120 MB upload, photo-change events); a phone in PTP mode is left to Image Capture
+- [x] libmtp and libusb removed: no third-party dylibs, no bundling, no `--backend` toggle; the deployment target is no longer pinned to a Homebrew bottle's OS
 - [x] libmtp path: create files/folders at the root with parent 0xFFFFFFFF (Android rejects 0)

@@ -25,7 +25,7 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 - [ ] Devices that send no MTP events: still work; changes show after a reconnect (log says "device events unavailable")
 
 ## Transfers
-- [ ] Copy a file off the device: bytes identical to a direct libmtp download (`mtp-getfile`)
+- [ ] Copy a file off the device: the copy is byte-for-byte intact (same size, opens/plays, and a second copy of the same file matches `shasum`)
 - [ ] Copy a >100 MB file to and from the device: Finder shows a progress bar
 - [ ] Cancel a large copy in Finder: the transfer stops and no partial file is left on the device
 - [ ] Unplug during a download: Finder reports an error, the agent reopens after replug

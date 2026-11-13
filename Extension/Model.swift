@@ -7,7 +7,7 @@ import FileProvider
 /// - `.rootContainer` ⇄ the top of the device storage (`rootParent`).
 /// - every other item ⇄ its decimal MTP object id, e.g. "16".
 enum MtpID {
-    /// libmtp's storage-root sentinel (0xFFFFFFFF); such a parent means top level.
+    /// MTP's storage-root sentinel (0xFFFFFFFF); such a parent means top level.
     static let storageRootSentinel: UInt32 = 0xFFFF_FFFF
 
     /// The MTP parent to list for a given container identifier, or nil if the

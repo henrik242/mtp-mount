@@ -6,9 +6,9 @@ private let log = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "agen
 
 /// Owns every attached MTP device and vends them over XPC.
 ///
-/// All device work runs on one serial queue: libmtp and its libusb context are
-/// not thread-safe, and device events for all devices are delivered while
-/// pumping that one context. Devices are opened when they're attached (USB
+/// All device work runs on one serial queue: the USB transport is not
+/// thread-safe, and device events for all devices are delivered while
+/// pumping it. Devices are opened when they're attached (USB
 /// hotplug) or when a request finds them; a device's session is dropped only
 /// when its transport fails, so unplug/replug recovers without restarting the
 /// agent while ordinary refusals (name collision, unsupported operation, …)

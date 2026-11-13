@@ -1,9 +1,9 @@
 name: MtpMount
 options:
   bundleIdPrefix: no.synth.mtpmount
-  # Apple Silicon only, latest macOS. The bundled libmtp/libusb come from
-  # Homebrew bottles built for the CI runner's OS, so this must not be lower
-  # than that OS (see .github/workflows/ci.yml, runs-on).
+  # Apple Silicon only. The agent talks to devices with IOUSBHost (a system
+  # framework), so there are no third-party dylibs and no minimum-OS floor
+  # beyond the APIs used.
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
@@ -41,7 +41,7 @@ targets:
     dependencies:
       - target: MtpMountFileProvider
         embed: true
-      # Embed the libmtp helper into Contents/MacOS. The app installs a per-user
+      # Embed the helper into Contents/MacOS. The app installs a per-user
       # LaunchAgent pointing here and bootstraps it via launchctl at runtime.
       - target: mtpmount-agent
         embed: true
@@ -66,7 +66,6 @@ targets:
     sources:
       - path: Agent
         excludes:
-          - "CLibmtp/**"
           - "*.plist"
       - path: Shared/MtpXPC.swift
       - path: Shared/Ids.swift
@@ -83,21 +82,12 @@ targets:
         # Non-sandboxed tool; no provisioning profile needed (no profile-restricted
         # entitlements). Developer ID signing + hardened runtime only.
         PROVISIONING_PROFILE_SPECIFIER: ""
-        # Find the CLibmtp module map, the libmtp headers, and the dylib.
-        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Agent/CLibmtp"
-        LIBRARY_SEARCH_PATHS: /opt/homebrew/lib
-        OTHER_SWIFT_FLAGS: "-Xcc -I/opt/homebrew/include"
-        OTHER_LDFLAGS: "-lmtp"
-        # So the bundled libmtp/libusb in Contents/Frameworks are found at runtime
-        # (see scripts/bundle-and-sign.sh, which rewrites the link paths to @rpath).
-        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
       configs:
         Debug:
-          # Unbundled debug helper loads Homebrew's libmtp (other team's signature).
           CODE_SIGN_ENTITLEMENTS: Agent/Agent-Debug.entitlements
 
   # Logic tests: compiles the platform-independent sources directly (no host
-  # app, no libmtp) and drives AgentService against an in-memory FakeDevice.
+  # app, no USB) and drives AgentService against an in-memory FakeDevice.
   MtpMountTests:
     type: bundle.unit-test
     platform: macOS
