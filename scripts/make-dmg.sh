@@ -53,7 +53,6 @@ ditto "$APP" "$STAGE/$(basename "$APP")"
 ln -s /Applications "$STAGE/Applications"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cp "$REPO/LICENSE" "$STAGE/LICENSE.txt"
-cp "$REPO/THIRD-PARTY-NOTICES.md" "$STAGE/THIRD-PARTY-NOTICES.md"
 
 echo "==> Creating $OUT"
 rm -f "$OUT"
