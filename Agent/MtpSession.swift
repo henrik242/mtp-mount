@@ -35,7 +35,7 @@ final class LibmtpBus: MtpBus {
         }
         raws = [:]
         guard let list = rawList, count > 0 else { return [] }
-        return (0..<Int(count)).map { i in
+        let infos = (0..<Int(count)).map { i -> RawDeviceInfo in
             let raw = list[i]
             let info = RawDeviceInfo(location: UInt64(raw.bus_location) << 8 | UInt64(raw.devnum),
                                      vendor: raw.device_entry.vendor_id,
@@ -43,11 +43,21 @@ final class LibmtpBus: MtpBus {
             raws[info.location] = raw
             return info
         }
+        log.debug("detected \(infos.count) raw device(s): \(infos.map { String(format: "%04x:%04x", $0.vendor, $0.product) }.joined(separator: ", "), privacy: .public)")
+        return infos
     }
 
     func open(_ info: RawDeviceInfo) throws -> MtpDevice {
         guard var raw = raws[info.location] else {
             throw MtpError(.noDevice, "The device is no longer attached.")
+        }
+        // A PTP still-image camera (or a phone in "Photos"/PTP mode) can't be
+        // usefully opened over libmtp, and claiming it only keeps Image Capture
+        // and Photos from it. Recognise it from its USB descriptors and leave it
+        // alone, the same as a device whose storage is all DCF (see MtpSession).
+        if let camera = UsbClass.ptpCameraName(vendor: info.vendor, product: info.product) {
+            log.info("leaving PTP camera alone (no MTP interface): \(camera, privacy: .public)")
+            throw MtpError(.notFileDevice, camera)
         }
         guard let dev = LIBMTP_Open_Raw_Device_Uncached(&raw) else {
             throw MtpError(.deviceBusy,
