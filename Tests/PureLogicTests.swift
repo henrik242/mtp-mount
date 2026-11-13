@@ -144,6 +144,17 @@ final class ClassifierTests: XCTestCase {
         XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 02fa: Timeout")]), .disconnected)
     }
 
+    // A device aborting one operation (e.g. rejecting a too-long or unsupported
+    // name mid-upload) surfaces as 0x02fe/0x02fd with the USB link still alive.
+    // It must stay `.failed` (a logical error that keeps the session), not be
+    // mistaken for a dead transport and drop the device.
+    func testDeviceAbortIsNotTransport() {
+        XCTAssertEqual(MtpErrorClassifier.classify(
+            [(.ptpLayer, "PTP Layer error 02fe: PTP Data Expected")]), .failed)
+        XCTAssertEqual(MtpErrorClassifier.classify(
+            [(.ptpLayer, "PTP Layer error 02fd: PTP Response Expected")]), .failed)
+    }
+
     func testDeviceResponses() {
         XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 2009: Invalid ObjectHandle")]), .noSuchObject)
         XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 200C: Store Full")]), .storageFull)
