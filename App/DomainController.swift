@@ -41,6 +41,12 @@ final class DomainController: ObservableObject {
     private let statusClient = AgentStatusClient()
     /// Session per device last time we looked, to signal domains on changes.
     private var lastSessions: [String: String] = [:]
+    /// When each domain first reported itself not-enabled. A freshly (re-)added
+    /// domain can say so for a second before the system settles, so we only act
+    /// on it once it has stayed that way past `enableGrace` -- otherwise a
+    /// replug would flash the "turn on the extension" notice.
+    private var notEnabledSince: [String: Date] = [:]
+    private let enableGrace: TimeInterval = 6
 
     /// Where the app runs from. Outside /Applications (e.g. straight from the
     /// DMG, or translocated by Gatekeeper) the helper path would go stale.
@@ -224,13 +230,24 @@ final class DomainController: ObservableObject {
         }
         lastSessions = sessions
 
+        let now = Date()
+        var stillNotEnabled: [String: Date] = [:]
         rows = domains.compactMap { domain -> DeviceRow? in
             guard let key = FP.deviceKey(of: domain) else { return nil }
+            // Hold off on "needs enabling" until a not-enabled domain has stayed
+            // that way past the grace period, so a just-added one doesn't flash.
+            var needsEnabling = false
+            if !domain.userEnabled {
+                let since = notEnabledSince[key] ?? now
+                stillNotEnabled[key] = since
+                needsEnabling = now.timeIntervalSince(since) >= enableGrace
+            }
             return DeviceRow(key: key,
                              name: attached.first { $0.key == key }?.name ?? domain.displayName,
                              connected: sessions[key] != nil,
-                             needsEnabling: !domain.userEnabled)
+                             needsEnabling: needsEnabling)
         }.sorted { ($0.connected ? 0 : 1, $0.name) < ($1.connected ? 0 : 1, $1.name) }
+        notEnabledSince = stillNotEnabled
         checked = true
     }
 
