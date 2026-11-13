@@ -198,7 +198,7 @@ final class PTPSession {
 
 // MARK: - The device
 
-/// An MTP device driven by our own PTP implementation (no libmtp).
+/// An MTP device driven by our own PTP implementation.
 final class NativeMtpDevice: MtpDevice {
     private let session: PTPSession
     private let info: PTPDeviceInfo

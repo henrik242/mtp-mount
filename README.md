@@ -61,17 +61,17 @@ locations.)
 - **Phase 0 (done):** signed File Provider app + extension serving a static test
   tree, proving the full macOS pipeline (signing, provisioning, entitlements,
   app group, replicated classification, enablement, enumeration, content fetch).
-- **Phase 1 (done):** the extension serves the **real device** over a `libmtp`
-  background agent + XPC. Browse the device in Finder and the Terminal and copy
-  files off it (`ls`, `cp`, `rsync`). Verified: copied bytes are identical to a
-  direct libmtp download.
+- **Phase 1 (done):** the extension serves the **real device** over a background
+  agent + XPC. Browse the device in Finder and the Terminal and copy files off it
+  (`ls`, `cp`, `rsync`).
 - **Phase 2 (done):** read **/write**. Upload files, create folders, rename,
   move, and delete — all from Finder
   or the Terminal. In-place content edits aren't offered (MTP has no partial
   write; an edit would change the object id).
-- **Packaging (done):** libmtp + libusb are bundled into the app and the whole
-  thing is Developer ID signed, hardened, notarized and stapled — no Homebrew
-  dependency at runtime. See [Packaging & notarization](#packaging--notarization).
+- **Native MTP (done):** the agent talks to devices with its own PTP/MTP
+  implementation over **IOUSBHost** (a system framework) — no libmtp, no
+  third-party dylibs. The app is Developer ID signed, hardened, notarized and
+  stapled. See [Packaging & notarization](#packaging--notarization).
 
 ## Architecture
 
@@ -82,7 +82,7 @@ MtpMount.app                        container app (NOT sandboxed) — registers 
   │    MtpMountFileProvider.appex    sandboxed replicated File Provider extension;
   │                                  all device I/O goes over XPC to the helper
   └─ Contents/MacOS/
-       mtpmount-agent               non-sandboxed helper owning the libmtp
+       mtpmount-agent               non-sandboxed helper owning the IOUSBHost
                                     USB session; vends a launchd mach XPC service
 ```
 
@@ -92,11 +92,11 @@ bootstrap`s it; launchd then starts it on demand when the extension looks up its
 mach service. (We drive launchd directly instead of `SMAppService` because BTM
 refuses to let an app register a non-sandboxed helper.)
 
-The helper reads MTP folders on demand (`LIBMTP_Get_Files_And_Folders`, uncached)
-for enumeration, and for a file download streams
-`LIBMTP_Get_File_To_File_Descriptor` into a file descriptor the sandboxed
-extension passes over XPC (uploads work the same way in reverse), with byte
-progress and cancellation carried by `NSProgress` across the connection.
+The helper reads MTP folders on demand (`GetObjectHandles` + `GetObjectInfo`,
+uncached) for enumeration, and for a file download streams the object
+(`GetObject`/`GetPartialObject`) into a file descriptor the sandboxed extension
+passes over XPC (uploads work the same way in reverse with `SendObject`), with
+byte progress and cancellation carried by `NSProgress` across the connection.
 
 Each attached device gets its own File Provider domain, identified by the
 device's USB serial number and named after the device. The helper opens every
@@ -116,12 +116,10 @@ version Finder based the change on.
 ## Build
 
 Requires an Apple Silicon Mac with the latest Xcode,
-[XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`),
-**libmtp** (`brew install libmtp`), and an Apple Developer account signed into
-Xcode. The helper links Homebrew's libmtp from `/opt/homebrew/lib` (the release
-packaging bundles it). The deployment target equals the macOS that Homebrew's
-bottles were built for; `scripts/bundle-and-sign.sh` refuses to package dylibs
-that need a newer macOS than the app claims.
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`), and
+an Apple Developer account signed into Xcode. The agent talks to devices with
+IOUSBHost (a system framework), so there are no third-party dependencies to
+install or bundle.
 
 ```sh
 xcodegen generate
@@ -143,20 +141,17 @@ Extensions → File Providers → MtpMount. (Apps installed outside the App Stor
 register their providers disabled, pending approval.)
 
 The volume then appears in Finder's sidebar and under `~/Library/CloudStorage/`.
-Debug builds sign the helper with `Agent/Agent-Debug.entitlements`, which turns
-off library validation so it can load Homebrew's libmtp.
 
 ## Packaging & notarization
 
 Two scripts under `scripts/` do the packaging. Both are configured by environment
-variables with sensible defaults (they auto-detect the Developer ID identity and
-find libmtp via Homebrew), so they carry no machine-specific paths.
+variables with sensible defaults (they auto-detect the Developer ID identity), so
+they carry no machine-specific paths.
 
-`scripts/bundle-and-sign.sh <app> [--timestamp]` makes a built app self-contained:
-it copies `libmtp.9.dylib` and `libusb-1.0.0.dylib` into `Contents/Frameworks`,
-rewrites their link paths to `@rpath`, and re-signs everything inside-out with
-Developer ID and the hardened runtime. After this the app needs no Homebrew at
-runtime. Config: `SIGN_IDENTITY`, `LIBMTP_DYLIB`, `AGENT_NAME`.
+`scripts/bundle-and-sign.sh <app> [--timestamp]` ships the license and re-signs
+everything inside-out with Developer ID and the hardened runtime (with a secure
+timestamp for notarization). There are no third-party dylibs to bundle. Config:
+`SIGN_IDENTITY`, `AGENT_NAME`.
 
 `scripts/make-dmg.sh <app> [out.dmg] [--notarize]` wraps the app in a compressed
 DMG with an `/Applications` drag-install target, signs it, and — with
@@ -182,7 +177,7 @@ ready to hand out.
 
 `.github/workflows/ci.yml`:
 
-- **build** — on every push/PR, installs XcodeGen + libmtp and does an *unsigned*
+- **build** — on every push/PR, installs XcodeGen and does an *unsigned*
   compile check (no secrets involved).
 - **release** — on a `v*` tag, builds Release, runs the two scripts to produce a
   signed, notarized, stapled DMG, and attaches it to the GitHub Release. It runs
@@ -201,9 +196,7 @@ Required repository secrets for the release job:
 | `NOTARY_KEY_ID` / `NOTARY_ISSUER` | ASC API key id and issuer UUID |
 
 Base64 a file with `base64 -i file -o -` (or `base64 < file`). The jobs run on
-the latest Apple Silicon runner (`macos-26`), so Homebrew lives at
-`/opt/homebrew` as the project expects. Bumping the runner means bumping the
-deployment target in `project.yml` to match.
+an Apple Silicon runner (`macos-26`).
 
 ## Signing notes
 
@@ -227,6 +220,6 @@ terms of the GNU General Public License as published by the Free Software
 Foundation, either version 2 of the License, or (at your option) any later
 version. See [`LICENSE`](LICENSE).
 
-Release builds bundle libmtp and libusb (both LGPL-2.1-or-later); see
-[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md). The license texts are also
-shipped inside the app (`Contents/Resources/Licenses`) and in the DMG.
+The app has no third-party runtime dependencies; it talks to devices with
+Apple's IOUSBHost framework. The license text is shipped inside the app
+(`Contents/Resources/Licenses`).

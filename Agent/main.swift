@@ -95,19 +95,10 @@ enum Domains {
 
 // MARK: - Entry point
 
-// Which MTP implementation to use: our own (IOUSBHost) or libmtp. The app
-// passes this in the LaunchAgent's arguments.
-let backend = MtpAgentConfig.Backend(arguments: CommandLine.arguments)
-log.info("mtpmount-agent starting (\(backend.rawValue, privacy: .public) backend); vending \(MtpAgentConfig.machServiceName, privacy: .public)")
+// Our own PTP/MTP implementation over IOUSBHost.
+log.info("mtpmount-agent starting; vending \(MtpAgentConfig.machServiceName, privacy: .public)")
 
-let bus: MtpBus
-switch backend {
-case .native:
-    bus = NativeMtpBus()
-case .libmtp:
-    LibmtpBus.initializeLibrary()
-    bus = LibmtpBus()
-}
+let bus: MtpBus = NativeMtpBus()
 let service = AgentService(bus: bus)
 
 // Device opened / changed on the device / lost: keep its domain and Finder in step.

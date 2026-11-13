@@ -13,8 +13,9 @@ private let log = Logger(subsystem: MtpAgentConfig.logSubsystem, category: "usb"
 /// plain Still Image interface in "Photos"/PTP mode. So the distinction we need
 /// is: does the device advertise MTP anywhere (an "MTP" interface, or a known
 /// MTP vendor)? If not, and it only presents Still Image, it's a camera (or a
-/// phone in PTP mode) that macOS's Image Capture should own — libmtp can't
-/// usefully open it, and claiming it only keeps Photos/Image Capture from it.
+/// phone in PTP mode) that macOS's Image Capture should own — we can't
+/// usefully open it as a file device, and claiming it only keeps Photos and
+/// Image Capture from it.
 enum UsbClass {
     /// Vendors whose MTP interface is vendor-specific without "MTP" in its name.
     private static let knownMTPVendors: Set<Int> = [0x091E]   // Garmin

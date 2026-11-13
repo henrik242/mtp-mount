@@ -34,16 +34,6 @@ final class DomainController: ObservableObject {
     @Published private(set) var ignoredDevices: [String] = []
     @Published private(set) var checked = false
     @Published private(set) var agentLoaded = false
-    /// Which MTP implementation the helper runs (persisted; changing it
-    /// rewrites the LaunchAgent, which restarts the helper).
-    @Published var backend: MtpAgentConfig.Backend =
-        MtpAgentConfig.Backend(rawValue: UserDefaults.standard.string(forKey: "backend") ?? "") ?? .default {
-        didSet {
-            guard backend != oldValue else { return }
-            UserDefaults.standard.set(backend.rawValue, forKey: "backend")
-            Task { await registerAgent() }
-        }
-    }
 
     /// Last result of a troubleshooting action.
     @Published var message: String?
@@ -62,7 +52,7 @@ final class DomainController: ObservableObject {
 
     // MARK: - Helper agent (launchd)
 
-    /// Path to the embedded libmtp helper executable.
+    /// Path to the embedded helper executable.
     private var helperURL: URL {
         Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/\(MtpAgentConfig.agentExecutable)")
     }
@@ -79,7 +69,7 @@ final class DomainController: ObservableObject {
     private func launchAgentPlist() throws -> Data {
         let plist: [String: Any] = [
             "Label": MtpAgentConfig.agentLabel,
-            "ProgramArguments": [helperURL.path, MtpAgentConfig.Backend.argument, backend.rawValue],
+            "ProgramArguments": [helperURL.path],
             "MachServices": [MtpAgentConfig.machServiceName: true],
             "RunAtLoad": false,
             "ProcessType": "Adaptive",

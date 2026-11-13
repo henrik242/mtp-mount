@@ -42,19 +42,19 @@ struct RawDeviceInfo: Equatable, Hashable {
     var product: UInt16
 }
 
-/// Finds and opens devices. `LibmtpBus` implements it over libmtp; tests use a
-/// fake. Not thread-safe: callers serialize.
+/// Finds and opens devices. `NativeMtpBus` implements it over IOUSBHost; tests
+/// use a fake. Not thread-safe: callers serialize.
 protocol MtpBus: AnyObject {
     func detect() throws -> [RawDeviceInfo]
     /// Open a detected device. Throws `.noDevice` or `.deviceBusy`.
     func open(_ device: RawDeviceInfo) throws -> MtpDevice
 }
 
-/// The operations on one open device. `MtpSession` implements it over libmtp;
-/// tests use an in-memory fake. Not thread-safe: callers serialize.
+/// The operations on one open device. `NativeMtpDevice` implements it over
+/// IOUSBHost; tests use an in-memory fake. Not thread-safe: callers serialize.
 protocol MtpDevice: AnyObject {
     /// Release the device. Returns false if it couldn't be released safely
-    /// (libmtp would be left with a pending USB transfer pointing at freed
+    /// (the backend would be left with a pending USB transfer pointing at freed
     /// memory); the handle is then abandoned and the owner should restart the
     /// process to get the device back.
     @discardableResult func close() -> Bool
@@ -77,61 +77,4 @@ protocol MtpDevice: AnyObject {
     func delete(id: UInt32) throws
     func rename(id: UInt32, to newName: String) throws
     func move(id: UInt32, toParent parent: UInt32) throws
-}
-
-/// libmtp's error-stack categories (mirrors `LIBMTP_error_number_t`), kept free
-/// of the C module so the classification logic is unit-testable.
-enum LibmtpErrorKind: Equatable {
-    case general, ptpLayer, usbLayer, memory, noDeviceAttached, storageFull, connecting, cancelled
-}
-
-enum MtpErrorClassifier {
-    /// PTP response codes that libmtp formats as "PTP Layer error %04x: …".
-    /// 0x02Fx are libgphoto2's internal errors and 0x20xx are responses from
-    /// the device itself. Only 0x02ff (I/O) means the transport is actually
-    /// dead; the other 0x02Fx (e.g. 0x02fe "Data Expected") are the device
-    /// aborting a single operation — a bad ObjectInfo, an unsupported name —
-    /// with the USB link still alive, so they stay `.failed` and the liveness
-    /// probe in `failure()` decides, instead of needlessly dropping the device.
-    private static let ptpCodes: [(String, MtpFailure)] = [
-        ("02ff", .disconnected),    // PTP_ERROR_IO — transport is dead
-        ("02fa", .disconnected),    // PTP_ERROR_TIMEOUT — transport hung
-        ("2009", .noSuchObject),    // Invalid_ObjectHandle
-        ("2005", .unsupported),     // Operation_Not_Supported
-        ("200c", .storageFull),     // Store_Full
-        ("200d", .accessDenied),    // Store_Read_Only
-        ("200e", .accessDenied),    // Access_Denied
-        ("201f", .cancelled),       // Transaction_Cancelled
-    ]
-
-    /// Pick the most significant failure from a drained libmtp error stack.
-    static func classify(_ stack: [(kind: LibmtpErrorKind, text: String)]) -> MtpFailure? {
-        guard !stack.isEmpty else { return nil }
-        var found: [MtpFailure] = []
-        for (kind, text) in stack {
-            switch kind {
-            case .usbLayer, .noDeviceAttached, .connecting:
-                found.append(.disconnected)
-            case .storageFull:
-                found.append(.storageFull)
-            case .cancelled:
-                found.append(.cancelled)
-            case .ptpLayer:
-                let lower = text.lowercased()
-                if let hit = ptpCodes.first(where: { lower.contains("error \($0.0)") }) {
-                    found.append(hit.1)
-                } else {
-                    found.append(.failed)
-                }
-            case .general, .memory:
-                found.append(.failed)
-            }
-        }
-        // A dead transport trumps everything: the session must be reopened.
-        for preferred in [MtpFailure.disconnected, .storageFull, .noSuchObject,
-                          .unsupported, .accessDenied, .cancelled] where found.contains(preferred) {
-            return preferred
-        }
-        return .failed
-    }
 }

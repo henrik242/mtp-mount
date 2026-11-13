@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
-/// Thin XPC client the extension uses to reach the non-sandboxed libmtp agent.
+/// Thin XPC client the extension uses to reach the non-sandboxed agent.
 /// The connection is lazy and self-healing: launchd starts the agent on demand
 /// when we look up its mach service. An *interrupted* connection stays usable
 /// (launchd relaunches the agent on the next message); only an *invalidated*

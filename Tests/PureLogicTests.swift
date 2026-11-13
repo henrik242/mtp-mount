@@ -133,45 +133,6 @@ final class ErrorMappingTests: XCTestCase {
     }
 }
 
-final class ClassifierTests: XCTestCase {
-    func testEmptyStackIsInconclusive() {
-        XCTAssertNil(MtpErrorClassifier.classify([]))
-    }
-
-    func testTransportErrors() {
-        XCTAssertEqual(MtpErrorClassifier.classify([(.usbLayer, "x")]), .disconnected)
-        XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 02ff: PTP I/O Error")]), .disconnected)
-        XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 02fa: Timeout")]), .disconnected)
-    }
-
-    // A device aborting one operation (e.g. rejecting a too-long or unsupported
-    // name mid-upload) surfaces as 0x02fe/0x02fd with the USB link still alive.
-    // It must stay `.failed` (a logical error that keeps the session), not be
-    // mistaken for a dead transport and drop the device.
-    func testDeviceAbortIsNotTransport() {
-        XCTAssertEqual(MtpErrorClassifier.classify(
-            [(.ptpLayer, "PTP Layer error 02fe: PTP Data Expected")]), .failed)
-        XCTAssertEqual(MtpErrorClassifier.classify(
-            [(.ptpLayer, "PTP Layer error 02fd: PTP Response Expected")]), .failed)
-    }
-
-    func testDeviceResponses() {
-        XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 2009: Invalid ObjectHandle")]), .noSuchObject)
-        XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 200C: Store Full")]), .storageFull)
-        XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 2005: Operation Not Supported")]), .unsupported)
-        XCTAssertEqual(MtpErrorClassifier.classify([(.ptpLayer, "PTP Layer error 2002: General Error")]), .failed)
-        XCTAssertEqual(MtpErrorClassifier.classify([(.storageFull, "")]), .storageFull)
-    }
-
-    func testTransportWinsOverOtherErrors() {
-        let stack: [(kind: LibmtpErrorKind, text: String)] = [
-            (.ptpLayer, "PTP Layer error 2009: Invalid ObjectHandle"),
-            (.ptpLayer, "PTP Layer error 02ff: PTP I/O Error"),
-        ]
-        XCTAssertEqual(MtpErrorClassifier.classify(stack), .disconnected)
-    }
-}
-
 final class SyncAnchorTests: XCTestCase {
     private func status(_ session: String, serial: String? = "S1") -> DeviceStatus {
         DeviceStatus(key: "mtp-S1", name: "Phone", serial: serial, sessionID: session, changeSeq: 0)
