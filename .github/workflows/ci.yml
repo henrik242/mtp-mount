@@ -4,7 +4,18 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
+    # Skip doc-only changes: they can't affect the build. A release tag bumps
+    # version files (project.yml, Info.plist), which aren't ignored, so the
+    # release still runs.
+    paths-ignore:
+      - "docs/**"
+      - "site/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "site/**"
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
