@@ -208,7 +208,7 @@ private struct WarningsView: View {
         if controller.rows.contains(where: \.needsEnabling) {
             Notice(symbol: "puzzlepiece.extension.fill", tint: .orange,
                    title: "Turn on the MtpMount extension",
-                   detail: "In System Settings → General → Login Items & Extensions, enable MtpMount under File Providers.") {
+                   detail: "macOS installs the extension switched off, so your devices stay out of Finder until you enable it once. In System Settings → General → Login Items & Extensions, find MtpMount under Extensions, click the ⓘ beside it, and turn on “File Provider.” (It may instead sit under a “File Providers” category.) The button below opens that pane.") {
                 Button("Open System Settings") { controller.openExtensionSettings() }
                     .buttonStyle(.borderedProminent)
             }
