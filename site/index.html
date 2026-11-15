@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MtpMount — mount MTP/USB devices in Finder</title>
+<meta name="description" content="Mount Android phones, GPS units, cameras and other MTP-over-USB devices as a browsable macOS volume using Apple's File Provider API. No kernel extension, no reboot.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f6ef2'/%3E%3Crect x='34' y='20' width='32' height='52' rx='6' fill='white'/%3E%3Ccircle cx='50' cy='64' r='4' fill='%234f6ef2'/%3E%3Crect x='46' y='74' width='8' height='12' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f5f6fa;
+    --bg-card: #ffffff;
+    --border: #e4e6ee;
+    --text: #1b1d24;
+    --text-soft: #565a66;
+    --accent: #4f6ef2;
+    --accent-ink: #ffffff;
+    --accent-soft: #eef1fe;
+    --warn-bg: #fff6e6;
+    --warn-border: #f2d49b;
+    --warn-ink: #7a5600;
+    --code-bg: #f0f1f6;
+    --shadow: 0 1px 2px rgba(20,23,40,.06), 0 8px 24px rgba(20,23,40,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1116;
+      --bg-soft: #14161d;
+      --bg-card: #171a22;
+      --border: #272b36;
+      --text: #e9eaf0;
+      --text-soft: #a2a7b5;
+      --accent: #7c92f7;
+      --accent-ink: #0f1116;
+      --accent-soft: #1c2130;
+      --warn-bg: #2a2314;
+      --warn-border: #5c4a1e;
+      --warn-ink: #e8c874;
+      --code-bg: #1d212b;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 16px; }
+  code, kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .88em;
+  }
+  code { background: var(--code-bg); padding: .12em .4em; border-radius: 5px; }
+  kbd {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 6px; padding: .1em .45em; white-space: nowrap;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; overflow-x: auto; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+
+  /* Hero */
+  header.hero {
+    background:
+      radial-gradient(1200px 400px at 50% -120px, var(--accent-soft), transparent 70%);
+    border-bottom: 1px solid var(--border);
+    padding: 56px 0 44px;
+    text-align: center;
+  }
+  .logo {
+    width: 84px; height: 84px; border-radius: 20px; display: block; margin: 0 auto 20px;
+    box-shadow: var(--shadow);
+  }
+  h1 { font-size: 2.6rem; margin: 0 0 .25em; letter-spacing: -.02em; }
+  .tagline { font-size: 1.2rem; color: var(--text-soft); margin: 0 auto 1.6em; max-width: 36ch; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 22px; border-radius: 10px; font-weight: 600; font-size: 1rem;
+    border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  }
+  .btn:hover { text-decoration: none; border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn.primary:hover { filter: brightness(1.05); }
+
+  main { padding: 8px 0 40px; }
+  section { padding: 34px 0; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: none; }
+  h2 { font-size: 1.6rem; letter-spacing: -.01em; margin: 0 0 .5em; }
+  h3 { font-size: 1.12rem; margin: 1.4em 0 .4em; }
+  p { margin: .7em 0; }
+
+  .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 8px; }
+  .feature {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .feature h3 { margin: 0 0 .25em; font-size: 1rem; }
+  .feature p { margin: 0; color: var(--text-soft); font-size: .95rem; }
+  .feature .ic { font-size: 1.3rem; line-height: 1; }
+
+  ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 0; }
+  ol.steps > li {
+    position: relative; padding: 2px 0 20px 52px; margin: 0;
+  }
+  ol.steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 0;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-ink);
+    font-weight: 700; display: grid; place-items: center;
+  }
+  ol.steps > li::after {
+    content: ""; position: absolute; left: 16px; top: 38px; bottom: 2px; width: 2px;
+    background: var(--border);
+  }
+  ol.steps > li:last-child::after { display: none; }
+  ol.steps > li strong { display: block; margin-bottom: 2px; }
+  ol.steps > li p { margin: .3em 0; color: var(--text-soft); }
+
+  .callout {
+    background: var(--warn-bg); border: 1px solid var(--warn-border);
+    border-radius: 12px; padding: 16px 18px; margin: 14px 0;
+  }
+  .callout h3 { margin-top: 0; color: var(--warn-ink); }
+  .callout.info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .callout.info h3 { color: var(--accent); }
+
+  .path {
+    display: inline-block; background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 7px; padding: .15em .5em; font-size: .9em; line-height: 1.9;
+  }
+  dl.tshoot { margin: 0; }
+  dl.tshoot dt { font-weight: 600; margin-top: 1.1em; }
+  dl.tshoot dd { margin: .2em 0 0; color: var(--text-soft); }
+
+  footer { color: var(--text-soft); font-size: .9rem; text-align: center; padding: 30px 0 48px; }
+  footer a { color: var(--text-soft); text-decoration: underline; }
+
+  @media (max-width: 560px) {
+    h1 { font-size: 2.1rem; }
+    .features { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+      <rect width="100" height="100" rx="22" fill="#4f6ef2"/>
+      <rect x="34" y="20" width="32" height="52" rx="6" fill="#fff"/>
+      <circle cx="50" cy="64" r="4" fill="#4f6ef2"/>
+      <rect x="46" y="74" width="8" height="12" fill="#fff"/>
+    </svg>
+    <h1>MtpMount</h1>
+    <p class="tagline">Mount Android phones, GPS units, cameras and other USB devices as a browsable macOS volume — right in Finder.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/henrik242/mtp-mount/releases/latest">Download the latest release</a>
+      <a class="btn" href="https://github.com/henrik242/mtp-mount">View on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="what">
+    <h2>What it is</h2>
+    <p>
+      MtpMount mounts any device that exposes its storage over <strong>MTP over USB</strong> —
+      Android phones, GPS units, cameras, music players, e-readers — as a volume you can browse
+      in Finder, using Apple's <strong>File Provider</strong> API. No kernel extension, no reboot.
+      The device appears in Finder's sidebar under <em>Locations</em> and under
+      <code>~/Library/CloudStorage/</code>, and works from the Terminal (<code>ls</code>,
+      <code>cp</code>, <code>rsync</code>).
+    </p>
+    <p>
+      Device I/O is a self-contained PTP/MTP implementation over Apple's <strong>IOUSBHost</strong>
+      framework — no <code>libmtp</code>, no third-party dependencies.
+    </p>
+    <div class="features">
+      <div class="feature"><div class="ic">📁</div><h3>Native Finder volume</h3><p>Copy, rename, move, create and delete files and folders like any other disk.</p></div>
+      <div class="feature"><div class="ic">🔌</div><h3>Plug &amp; go</h3><p>Devices appear when connected and their location is removed when you unplug them.</p></div>
+      <div class="feature"><div class="ic">🔄</div><h3>Live changes</h3><p>A new photo taken while connected shows up in Finder within a few seconds.</p></div>
+      <div class="feature"><div class="ic">🧩</div><h3>No dependencies</h3><p>Pure Apple frameworks. Developer ID signed and notarized.</p></div>
+    </div>
+  </section>
+
+  <section id="requirements">
+    <h2>Requirements</h2>
+    <p>An <strong>Apple Silicon</strong> Mac on the latest macOS. That's it — nothing else to install.</p>
+  </section>
+
+  <section id="install">
+    <h2>Installation</h2>
+    <ol class="steps">
+      <li>
+        <strong>Download &amp; install the app</strong>
+        <p>Grab the latest <code>MtpMount-x.y.z.dmg</code> from the
+          <a href="https://github.com/henrik242/mtp-mount/releases/latest">Releases page</a>,
+          open it, and drag <strong>MtpMount</strong> into <strong>Applications</strong>.
+          It must run from Applications.</p>
+      </li>
+      <li>
+        <strong>Open MtpMount</strong>
+        <p>Launch it from Applications. On first run it installs a small background helper.
+          MtpMount lives in the menu bar.</p>
+      </li>
+      <li>
+        <strong>Turn on the File Provider extension</strong> — the one manual step
+        <p>macOS registers the extension <em>disabled</em>, so you have to enable it once by hand.
+          MtpMount's window has a button that jumps you straight to the right settings pane.</p>
+        <div class="callout">
+          <h3>⚙️ The toggle you have to flip yourself</h3>
+          <p>In <strong>System Settings → General</strong>, open
+            <span class="path">Login Items &amp; Extensions</span>
+            <span style="color:var(--text-soft)">(Norwegian: <span class="path">Påloggingsobjekter og utvidelser</span>)</span>.
+            Scroll to <strong>Extensions</strong> / <strong>Utvidelser</strong>, find <strong>MtpMount</strong>,
+            click the <strong>ⓘ</strong> button next to it, and switch on
+            <strong>File Provider</strong> <span style="color:var(--text-soft)">(Norwegian:
+            <strong>Filleverandør</strong>)</span>. Click <em>Done</em>.</p>
+          <p style="margin-bottom:0">Depending on your macOS version it may instead appear directly under a
+            <strong>File Providers</strong> category in the same pane — enable MtpMount there.</p>
+        </div>
+      </li>
+      <li>
+        <strong>Connect your device</strong>
+        <p>Use a USB <em>data</em> cable and unlock the device. On an Android phone, tap the USB
+          notification and choose <strong>File transfer</strong>. The device appears under its own
+          name (e.g. “Galaxy S25”) in MtpMount's window and in Finder's sidebar. “Show in Finder”
+          opens it.</p>
+      </li>
+    </ol>
+
+    <div class="callout info">
+      <h3>Why isn't that toggle automatic?</h3>
+      <p>It can't be — and that's by design. macOS treats a File Provider extension as something the
+        <em>user</em> must consent to, so there is no API for an app to enable its own extension on
+        your behalf. An app that could silently switch on a Finder-integrating extension would
+        defeat the whole consent model.</p>
+      <p>Apps delivered outside the Mac App Store (like this one — signed with a Developer ID and
+        notarized) always register their extensions in a <strong>disabled, pending-approval</strong>
+        state. MtpMount <em>does</em> everything it's allowed to: it registers the provider and the
+        helper automatically, and its window deep-links you straight to the exact settings pane
+        (via the private <code>x-apple.systempreferences:…LoginItems-Settings.extension</code> URL).
+        But the final flip of the switch is reserved for you. You only have to do it once.</p>
+    </div>
+  </section>
+
+  <section id="using">
+    <h2>Using it</h2>
+    <p>You can copy files off the device, copy files onto it, and create, rename, move and delete
+      files and folders. A few things worth knowing:</p>
+    <ul>
+      <li><strong>Several devices at once</strong> — each gets its own location in Finder.</li>
+      <li><strong>Cameras are left alone</strong> — a device whose storage is entirely a camera file
+        system (DCF) is released right away, so Photos and Image Capture keep working.</li>
+      <li><strong>Unplug = gone</strong> — a device's location is removed when you disconnect it and
+        comes back when you reconnect.</li>
+      <li><strong>No in-place edits</strong> — MTP has no partial writes, so to edit a file on the
+        device, copy it to your Mac, edit it, and copy it back.</li>
+    </ul>
+  </section>
+
+  <section id="troubleshooting">
+    <h2>Troubleshooting</h2>
+    <dl class="tshoot">
+      <dt>“Device is in use by another app”</dt>
+      <dd>macOS and other tools grab MTP devices. Quit Android File Transfer, OpenMTP and any
+        maker's sync app. If Image Capture or Photos opens when you plug the device in, open Image
+        Capture, select the device, and set “Connecting this device opens” to <strong>No
+        application</strong>. Then unplug and reconnect.</dd>
+
+      <dt>“No device connected” although it's plugged in</dt>
+      <dd>Use a data cable (not charge-only), unlock the device, choose <strong>File transfer</strong>
+        in the phone's USB notification, and try another port or cable.</dd>
+
+      <dt>The device doesn't appear in Finder</dt>
+      <dd>Make sure the extension is enabled (step 3), open MtpMount once with the device attached,
+        then use <strong>Troubleshooting → Reset</strong> in the window if it's still missing.</dd>
+
+      <dt>“The MtpMount helper isn't running”</dt>
+      <dd>Use <strong>Troubleshooting → Reinstall helper</strong>.</dd>
+
+      <dt>Finder shows stale contents</dt>
+      <dd>Use <strong>Troubleshooting → Refresh Finder</strong>.</dd>
+    </dl>
+  </section>
+
+  <section id="uninstall">
+    <h2>Uninstall</h2>
+    <p>Open MtpMount, choose <strong>Troubleshooting → Uninstall…</strong>, then move MtpMount to the
+      Trash. That removes the helper's LaunchAgent
+      (<code>~/Library/LaunchAgents/no.synth.mtpmount.helper.plist</code>) and the Finder locations.</p>
+  </section>
+
+  <section id="source">
+    <h2>Open source</h2>
+    <p>MtpMount is free software under the GNU General Public License, v2 or later. The source,
+      build instructions and release notes live on GitHub.</p>
+    <div class="cta" style="justify-content:flex-start">
+      <a class="btn" href="https://github.com/henrik242/mtp-mount">Source &amp; docs</a>
+      <a class="btn" href="https://github.com/henrik242/mtp-mount/releases">All releases</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <p>MtpMount — <a href="https://github.com/henrik242/mtp-mount">github.com/henrik242/mtp-mount</a> ·
+     GPL-2.0-or-later · Not affiliated with Apple or Google.</p>
+</footer>
+
+</body>
+</html>
