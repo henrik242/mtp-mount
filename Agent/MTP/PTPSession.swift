@@ -330,18 +330,17 @@ final class NativeMtpDevice: MtpDevice {
 
     func download(id: UInt32, toFileDescriptor fd: Int32, progress: TransferProgress?) throws {
         let expected = try metadata(id: id)?.size
+        // Write through FileHandle rather than a Data.withUnsafeBytes closure:
+        // Xcode 26.6 miscompiles a pointer-closure in a throwing context (it
+        // can leave the buffer pointer in the error register), which is what
+        // broke the raw write()/transfer paths on macOS 27.
+        let file = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
         try run("Downloading object \(id)") {
             try session.transact(PTP.Op.getObject, [id], data: .dataIn({ chunk, received, total in
-                try chunk.withUnsafeBytes { buffer in
-                    var offset = 0
-                    while offset < buffer.count {
-                        let n = Darwin.write(fd, buffer.baseAddress! + offset, buffer.count - offset)
-                        if n < 0 {
-                            if errno == EINTR { continue }
-                            throw MtpError(.failed, "Couldn't write the downloaded file (errno \(errno)).")
-                        }
-                        offset += n
-                    }
+                do {
+                    try file.write(contentsOf: chunk)
+                } catch {
+                    throw MtpError(.failed, "Couldn't write the downloaded file (\(error.localizedDescription)).")
                 }
                 return progress?(received, total ?? expected ?? 0) ?? true
             }))
@@ -382,16 +381,22 @@ final class NativeMtpDevice: MtpDevice {
                 handle = out.count > 2 ? out[2] : 0
             }
             var sent: UInt64 = 0
+            // Read through FileHandle rather than a withUnsafeMutableBytes
+            // closure, which Xcode 26.6 miscompiles in a throwing context
+            // (see download()).
+            let file = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
             do {
                 try session.transact(PTP.Op.sendObject, data: .dataOut(length: size, { max in
                     if let progress, !progress(sent, size) { return nil }
-                    var buffer = Data(count: max)
-                    let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress!, max) }
-                    if n < 0 { throw MtpError(.failed, "Couldn't read the file to upload (errno \(errno)).") }
-                    buffer.count = n
-                    sent += UInt64(n)
+                    let chunk: Data
+                    do {
+                        chunk = try file.read(upToCount: max) ?? Data()
+                    } catch {
+                        throw MtpError(.failed, "Couldn't read the file to upload (\(error.localizedDescription)).")
+                    }
+                    sent += UInt64(chunk.count)
                     _ = progress?(sent, size)
-                    return buffer
+                    return chunk
                 }))
             } catch {
                 // Don't leave a truncated object behind (unless the link is gone).
