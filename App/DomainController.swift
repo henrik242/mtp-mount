@@ -149,9 +149,14 @@ final class DomainController: ObservableObject {
 
     /// Run /bin/launchctl off the main actor and return (exitCode, combinedOutput).
     private nonisolated static func launchctl(_ args: [String]) async -> (Int32, String) {
+        await run("/bin/launchctl", args)
+    }
+
+    /// Run a tool off the main actor and return (exitCode, combinedOutput).
+    private nonisolated static func run(_ tool: String, _ args: [String]) async -> (Int32, String) {
         await Task.detached {
             let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            p.executableURL = URL(fileURLWithPath: tool)
             p.arguments = args
             let pipe = Pipe()
             p.standardOutput = pipe
@@ -163,7 +168,7 @@ final class DomainController: ObservableObject {
                 p.waitUntilExit()
                 return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
             } catch {
-                return (-1, "launchctl failed: \(error.localizedDescription)")
+                return (-1, "\(tool) failed: \(error.localizedDescription)")
             }
         }.value
     }
@@ -329,9 +334,28 @@ final class DomainController: ObservableObject {
         }
     }
 
-    /// Remove everything the app installed outside its bundle, so it can be
-    /// dragged to the Trash cleanly.
+    /// Uninstall: remove everything outside the bundle, move the app to the
+    /// Trash and quit.
     func uninstall() async {
+        let app = Bundle.main.bundleURL
+        await removeEverythingButTheApp()
+        do {
+            let trashed = try await NSWorkspace.shared.recycle([app])[app] ?? app
+            // Moving keeps the registration, now pointing into the Trash.
+            await Self.unregisterFromSystem(trashed)
+        } catch {
+            log.error("moving the app to the Trash failed: \(error.localizedDescription, privacy: .public)")
+            message = "Removed everything except the app itself. Move MtpMount to the Trash to finish."
+            return
+        }
+        exit(0)
+    }
+
+    /// Remove everything MtpMount put outside its bundle: Finder locations, the
+    /// helper, the extension's data, preferences, and the registration that
+    /// keeps it listed under Login Items & Extensions. The caller must quit
+    /// right after, or the app writes its preferences back.
+    func removeEverythingButTheApp() async {
         do {
             try await NSFileProviderManager.removeAllDomains()
         } catch {
@@ -339,7 +363,42 @@ final class DomainController: ObservableObject {
         }
         await unregisterAgent()
         rows = []
-        message = "Uninstalled the helper and the Finder locations. You can now move MtpMount to the Trash."
+
+        let library = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library")
+        let app = Bundle.main.bundleIdentifier ?? "no.synth.mtpmount"
+        let fileProvider = "no.synth.mtpmount.fileprovider"
+        let group = "\(MtpAgentConfig.teamID).no.synth.mtpmount"
+        for path in ["Containers/\(fileProvider)", "Application Scripts/\(fileProvider)",
+                     "Application Support/FileProvider/\(fileProvider)",
+                     "Group Containers/\(group)", "Application Scripts/\(group)",
+                     "Caches/\(app)", "HTTPStorages/\(app)", "Saved Application State/\(app).savedState"] {
+            let url = library.appendingPathComponent(path)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                log.error("removing \(path, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        NSApp.windows.forEach { $0.close() }
+        // cfprefsd empties the file but leaves it behind.
+        _ = await Self.run("/usr/bin/defaults", ["delete", app])
+        try? FileManager.default.removeItem(at: library.appendingPathComponent("Preferences/\(app).plist"))
+        await Self.unregisterFromSystem(Bundle.main.bundleURL)
+    }
+
+    /// Drop the app and its extension from LaunchServices and PlugInKit.
+    /// Without this, System Settings keeps listing the extension after the
+    /// app is gone.
+    private nonisolated static func unregisterFromSystem(_ app: URL) async {
+        let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        let plugIns = app.appendingPathComponent("Contents/PlugIns")
+        let appexes = (try? FileManager.default.contentsOfDirectory(at: plugIns, includingPropertiesForKeys: nil)) ?? []
+        for appex in appexes where appex.pathExtension == "appex" {
+            _ = await run("/usr/bin/pluginkit", ["-r", appex.path])
+            _ = await run(lsregister, ["-u", appex.path])
+        }
+        _ = await run(lsregister, ["-u", app.path])
     }
 
     // MARK: - Shortcuts

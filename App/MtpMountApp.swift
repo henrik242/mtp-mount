@@ -8,10 +8,13 @@ private let repoURL = URL(string: "https://github.com/henrik242/mtp-mount")!
 /// with `--sync-domains` just to register a Finder location and quit; that must
 /// show no UI at all (no menu bar icon, no Dock, no window), unless the user
 /// has yet to enable the extension, in which case the app stays to guide them.
+/// `--uninstall` (run by Homebrew) is headless too.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let controller = DomainController()
+    private let isUninstall = CommandLine.arguments.contains(MtpAgentConfig.uninstallArgument)
     @Published private(set) var headless = CommandLine.arguments.contains(MtpAgentConfig.syncDomainsArgument)
+        || CommandLine.arguments.contains(MtpAgentConfig.uninstallArgument)
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // LSUIElement already makes this an accessory (menu-bar) app; for the
@@ -21,6 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
+            if isUninstall {
+                await controller.removeEverythingButTheApp()
+                exit(0)
+            }
             await controller.register()
             if headless {
                 if await controller.needsFirstEnable() {
@@ -347,7 +354,7 @@ private struct TroubleshootingView: View {
             }
             Section {
                 Button("Uninstall…", role: .destructive) { confirmUninstall = true }
-                    .help("Removes the helper and the Finder locations so the app can be deleted.")
+                    .help("Removes the helper, the Finder locations and all settings, and moves MtpMount to the Trash.")
             }
             if let message = controller.message {
                 Section { Text(message).font(.footnote).foregroundStyle(.secondary) }
@@ -360,7 +367,7 @@ private struct TroubleshootingView: View {
             Button("Reset", role: .destructive) { Task { await controller.reset() } }
             Button("Cancel", role: .cancel) { }
         }
-        .confirmationDialog("Uninstall MtpMount's helper and remove its Finder locations?",
+        .confirmationDialog("Uninstall MtpMount? This removes its helper, Finder locations and settings, and moves the app to the Trash.",
                             isPresented: $confirmUninstall, titleVisibility: .visible) {
             Button("Uninstall", role: .destructive) { Task { await controller.uninstall() } }
             Button("Cancel", role: .cancel) { }

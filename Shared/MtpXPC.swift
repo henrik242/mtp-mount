@@ -121,6 +121,10 @@ enum MtpAgentConfig {
     /// Launch argument that makes the app add domains for attached devices
     /// and quit (used by the agent when it may not add domains itself).
     static let syncDomainsArgument = "--sync-domains"
+    /// Launch argument that makes the app remove everything it installed
+    /// outside its bundle and quit, leaving the bundle itself (Homebrew's
+    /// `uninstall` runs it before deleting the app).
+    static let uninstallArgument = "--uninstall"
 
     /// File name of the helper executable in Contents/MacOS.
     static let agentExecutable = "mtpmount-agent"
