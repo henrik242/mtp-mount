@@ -6,23 +6,39 @@ private let repoURL = URL(string: "https://github.com/henrik242/mtp-mount")!
 
 /// Owns the controller and the launch lifecycle. The helper relaunches the app
 /// with `--sync-domains` just to register a Finder location and quit; that must
-/// show no UI at all (no menu bar icon, no Dock, no window).
+/// show no UI at all (no menu bar icon, no Dock, no window), unless the user
+/// has yet to enable the extension, in which case the app stays to guide them.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let controller = DomainController()
-    let isSyncLaunch = CommandLine.arguments.contains(MtpAgentConfig.syncDomainsArgument)
+    @Published private(set) var headless = CommandLine.arguments.contains(MtpAgentConfig.syncDomainsArgument)
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // LSUIElement already makes this an accessory (menu-bar) app; for the
         // headless sync-launch go further so nothing is drawn at all.
-        if isSyncLaunch { NSApp.setActivationPolicy(.prohibited) }
+        if headless { NSApp.setActivationPolicy(.prohibited) }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
             await controller.register()
-            if isSyncLaunch { NSApp.terminate(nil) }
+            if headless {
+                if await controller.needsFirstEnable() {
+                    NSApp.setActivationPolicy(.accessory)
+                    headless = false
+                } else {
+                    NSApp.terminate(nil)
+                }
+            } else if !controller.extensionEnabledOnce {
+                controller.requestWindow()
+            }
         }
+    }
+
+    /// Opening the app again while it runs shows its window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !headless { controller.requestWindow() }
+        return false
     }
 
     /// A menu-bar app must outlive its windows (and its popover): closing the
@@ -38,7 +54,7 @@ struct MtpMountApp: App {
         // The menu bar item is the primary surface. Hidden for the headless
         // sync-launch (the helper relaunching us just to register a location),
         // which also runs at .prohibited so nothing else is drawn.
-        MenuBarExtra(isInserted: .constant(!appDelegate.isSyncLaunch)) {
+        MenuBarExtra(isInserted: .constant(!appDelegate.headless)) {
             MenuContent().environmentObject(appDelegate.controller)
         } label: {
             MenuBarLabel(controller: appDelegate.controller)
@@ -68,7 +84,18 @@ struct MtpMountApp: App {
 /// one closes, drop back to accessory (menu-bar-only, no Dock icon).
 @MainActor private func showWindowChrome() {
     NSApp.setActivationPolicy(.regular)
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.activate()
+}
+
+/// Bring the status window forward. Activation is cooperative, so when the
+/// request didn't come from a click macOS may decline it; then at least put
+/// the window on top.
+@MainActor private func bringStatusWindowForward() {
+    showWindowChrome()
+    DispatchQueue.main.async {
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("status") == true }?
+            .orderFrontRegardless()
+    }
 }
 
 @MainActor private func hideWindowChromeWhenIdle() {
@@ -87,6 +114,7 @@ struct MtpMountApp: App {
 /// app's lifetime, so the icon stays current while everything is closed.
 private struct MenuBarLabel: View {
     @ObservedObject var controller: DomainController
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         let connected = controller.rows.filter(\.connected).count
@@ -99,6 +127,14 @@ private struct MenuBarLabel: View {
                     await controller.refresh()
                     try? await Task.sleep(for: .seconds(5))
                 }
+            }
+            // Window requests: first launch, reopening the app, and the first
+            // device that needs the extension enabled. `initial` catches a
+            // request made before the label existed (after a background launch).
+            .onChange(of: controller.windowRequests, initial: true) { _, requests in
+                guard requests > 0 else { return }
+                openWindow(id: "status")
+                bringStatusWindowForward()
             }
     }
 }
@@ -147,7 +183,7 @@ private struct MenuContent: View {
         .task { await controller.refresh() }
     }
 
-    private func activate() { NSApp.activate(ignoringOtherApps: true) }
+    private func activate() { NSApp.activate() }
 }
 
 // MARK: - Status window
@@ -166,7 +202,8 @@ private struct StatusWindow: View {
                     ContentUnavailableView {
                         Label("No Device Connected", systemImage: "cable.connector")
                     } description: {
-                        Text("Connect an MTP device (phone, camera, GPS, music player…) with a USB data cable and unlock it. On a phone, choose “File transfer” in the USB notification.")
+                        Text("Connect an MTP device (phone, camera, GPS, music player…) with a USB data cable and unlock it. On a phone, choose “File transfer” in the USB notification."
+                             + (controller.extensionEnabledOnce ? "" : "\n\nMtpMount will then ask you to allow it in Finder, once."))
                     }
                 }
             } else {
@@ -207,8 +244,16 @@ private struct WarningsView: View {
         }
         if controller.rows.contains(where: \.needsEnabling) {
             Notice(symbol: "puzzlepiece.extension.fill", tint: .orange,
-                   title: "Turn on the MtpMount extension",
-                   detail: "macOS installs the extension switched off, so your devices stay out of Finder until you enable it once. In System Settings → General → Login Items & Extensions, find MtpMount under Extensions, click the ⓘ beside it, and turn on “File Provider.” (It may instead sit under a “File Providers” category.) The button below opens that pane.") {
+                   title: "Allow MtpMount in Finder",
+                   detail: compact
+                       ? "macOS asks once before an app can add a location to Finder."
+                       : """
+                         macOS asks once before an app can add a location to Finder, as with Dropbox or Google Drive.
+                         1. Click Open System Settings.
+                         2. Under Extensions, click ⓘ next to MtpMount. If it's not there, look under File Providers.
+                         3. Turn on File Provider.
+                         Your device then opens in Finder.
+                         """) {
                 Button("Open System Settings") { controller.openExtensionSettings() }
                     .buttonStyle(.borderedProminent)
             }
@@ -343,7 +388,7 @@ private struct AppCommands: Commands {
             Divider()
             Button("Refresh Finder") { Task { await controller.signalAll() } }
                 .keyboardShortcut("r", modifiers: .command)
-            Button("Open Extension Settings…") { controller.openExtensionSettings() }
+            Button("Open Finder Extension Settings…") { controller.openExtensionSettings() }
         }
     }
 }
@@ -364,7 +409,7 @@ private func showAboutPanel() {
         .version: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
         .credits: credits,
     ])
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.activate()
 }
 
 // MARK: - Notice

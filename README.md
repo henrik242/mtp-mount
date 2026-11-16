@@ -19,16 +19,20 @@ brew install --cask henrik242/brew/mtp-mount
 Or download `MtpMount-x.y.z.dmg` from [Releases](../../releases/latest) and
 drag **MtpMount** to **Applications** (it must run from there).
 
-1. Open MtpMount. It installs a small helper and lives in the menu bar.
-2. Turn on the extension (macOS registers it disabled, and only you can enable
-   it): **System Settings → General → Login Items & Extensions**, find
-   MtpMount under **Extensions**, click ⓘ and switch on **File Provider**. On
-   some macOS versions it's under a **File Providers** category instead. The
-   app's window has a button that opens the right pane.
-3. Connect the device with a USB data cable and unlock it. On an Android
-   phone, tap the USB notification and choose **File transfer**. The device
-   appears in the window and in Finder's sidebar under its own name (e.g.
-   "Galaxy S25").
+1. Open MtpMount. It installs a small helper, lives in the menu bar and
+   shows its window until setup is done.
+2. Connect the device with a USB data cable and unlock it. On an Android
+   phone, tap the USB notification and choose **File transfer**.
+3. Allow MtpMount in Finder. macOS asks once before an app can add a
+   location to Finder, as with Dropbox or Google Drive. When you connect your
+   first device, MtpMount brings up its window with a button that opens
+   **System Settings → General → Login Items & Extensions**. There:
+   1. Under **Extensions**, click ⓘ next to MtpMount. If it's not there,
+      look under **File Providers**.
+   2. Turn on **File Provider**.
+
+   The device then opens in Finder and appears in the sidebar under its own
+   name (e.g. "Galaxy S25").
 
 ## Usage
 
@@ -52,7 +56,8 @@ within a few seconds.
 - **"No device connected"** although it's plugged in: use a data cable (not
   charge-only), unlock the device, choose **File transfer** on a phone, and
   try another port or cable.
-- **The device doesn't appear in Finder**: check the extension is enabled,
+- **The device doesn't appear in Finder**: check MtpMount is allowed in Finder
+  (Install step 3),
   open MtpMount with the device attached, then try **Troubleshooting → Reset**.
 - **"The MtpMount helper isn't running"**: **Troubleshooting → Reinstall helper**.
 - **Finder shows stale contents**: **Troubleshooting → Refresh Finder**.
@@ -114,7 +119,7 @@ cp -R build/Build/Products/Debug/MtpMount.app /Applications/
 open /Applications/MtpMount.app
 ```
 
-Then enable the extension as in [Install](#install).
+Then allow MtpMount in Finder as in [Install](#install).
 
 ## Packaging & notarization
 

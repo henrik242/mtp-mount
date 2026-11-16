@@ -110,6 +110,7 @@ targets:
       - Extension/FileProviderExtension.swift
       - Extension/AgentClient.swift
       - Extension/Enumerator.swift
+      - App/EnableOnboarding.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: no.synth.mtpmount.tests

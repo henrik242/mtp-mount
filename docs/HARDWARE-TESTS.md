@@ -54,6 +54,13 @@ log stream --predicate 'subsystem == "no.synth.mtpmount"' --level debug
 - [ ] Switch that phone back to "File transfer": it's opened and gets its location
 
 ## Install / uninstall
+- [ ] Fresh install (`defaults delete no.synth.mtpmount extensionEnabledOnce`, File Provider off): the window opens on launch and says you'll be asked to allow MtpMount in Finder
+- [ ] Opening the app again while it runs (Finder or Spotlight) brings the window forward
+- [ ] File Provider off, app running, window closed, Finder in front: attach a device; about 6-11 s later the window comes forward with the "Allow MtpMount in Finder" notice
+- [ ] Turn on File Provider: within a few seconds the device opens in Finder at its own root, not `~/Library/CloudStorage`
+- [ ] Two devices attached while off: turning it on opens both; a device attached later in the same run doesn't bring the window forward again
+- [ ] File Provider off, app quit: attach a device; the app starts, its menu bar icon appears and the window comes forward
+- [ ] File Provider already on: attaching a device opens neither the window nor Finder, and the app launched in the background quits
 - [ ] Upgrading from a build with the old "Garmin Edge" / "MTP Device" location: it is removed and per-device locations appear
 - [ ] Fresh install from the DMG; run from the DMG first: the app warns to move it to Applications
 - [ ] Move the app after installing: reopening it rewrites and reloads the helper

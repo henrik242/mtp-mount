@@ -214,41 +214,42 @@
       <li>
         <strong>Open MtpMount</strong>
         <p>Launch it from Applications. On first run it installs a small background helper.
-          MtpMount lives in the menu bar.</p>
-      </li>
-      <li>
-        <strong>Turn on the File Provider extension (the one manual step)</strong>
-        <p>macOS registers the extension <em>disabled</em>, so you have to enable it once by hand.
-          MtpMount's window has a button that jumps you straight to the right settings pane.</p>
-        <div class="callout">
-          <h3>The toggle you have to flip yourself</h3>
-          <p>Open <strong>System Settings → General → Login Items &amp; Extensions</strong>, find
-            MtpMount under <strong>Extensions</strong>, click the ⓘ next to it, and switch on
-            <strong>File Provider</strong>. On some macOS versions it sits under a
-            <strong>File Providers</strong> category instead. Enable MtpMount there.</p>
-        </div>
+          MtpMount lives in the menu bar and shows its window until setup is done.</p>
       </li>
       <li>
         <strong>Connect your device</strong>
         <p>Use a USB <em>data</em> cable and unlock the device. On an Android phone, tap the USB
           notification and choose <strong>File transfer</strong>. The device appears under its own
-          name (e.g. “Galaxy S25”) in MtpMount's window and in Finder's sidebar. “Show in Finder”
-          opens it.</p>
+          name (e.g. “Galaxy S25”) in MtpMount's window, and in Finder's sidebar after the next
+          step.</p>
+      </li>
+      <li>
+        <strong>Allow MtpMount in Finder (once)</strong>
+        <p>Like Dropbox and Google Drive, MtpMount appears in Finder through a File Provider
+          extension, which macOS asks you to approve. When you connect your first device,
+          MtpMount opens its window with a button that takes you to the right settings pane.</p>
+        <div class="callout">
+          <h3>Where the switch is</h3>
+          <p>In <strong>System Settings → General → Login Items &amp; Extensions</strong>, click
+            the ⓘ next to MtpMount under <strong>Extensions</strong> and turn on
+            <strong>File Provider</strong>. If it's not there, look under
+            <strong>File Providers</strong>. The device then opens in Finder.</p>
+        </div>
       </li>
     </ol>
 
     <div class="callout info">
-      <h3>Why isn't that toggle automatic?</h3>
-      <p>No, and that's intentional. macOS treats a File Provider extension as something the
-        <em>user</em> must consent to, so there is no API for an app to enable its own extension on
-        your behalf. An app that could silently switch on a Finder-integrating extension would
-        defeat the consent model.</p>
+      <h3>Why isn't this automatic?</h3>
+      <p>macOS doesn't let an app turn on its own File Provider extension. It treats such an
+        extension as something the <em>user</em> must consent to, so there is no API for an app
+        to enable it on your behalf. An app that could silently turn on a Finder-integrating
+        extension would defeat the consent model.</p>
       <p>Apps delivered outside the Mac App Store (like this one, signed with a Developer ID and
         notarized) always register their extensions in a <strong>disabled, pending-approval</strong>
         state. MtpMount does everything it's allowed to: it registers the provider and the
         helper automatically, and its window deep-links you straight to the exact settings pane
         (via the private <code>x-apple.systempreferences:...LoginItems-Settings.extension</code> URL).
-        The final flip of the switch is reserved for you, and you only have to do it once.</p>
+        Turning it on is left to you, and you only have to do it once.</p>
     </div>
   </section>
 
@@ -281,7 +282,7 @@
         in the phone's USB notification, and try another port or cable.</dd>
 
       <dt>The device doesn't appear in Finder</dt>
-      <dd>Make sure the extension is enabled (step 3), open MtpMount once with the device attached,
+      <dd>Make sure MtpMount is allowed in Finder (step 4), open MtpMount once with the device attached,
         then use <strong>Troubleshooting → Reset</strong> in the window if it's still missing.</dd>
 
       <dt>“The MtpMount helper isn't running”</dt>

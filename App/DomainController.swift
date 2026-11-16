@@ -35,6 +35,16 @@ final class DomainController: ObservableObject {
     @Published private(set) var checked = false
     @Published private(set) var agentLoaded = false
 
+    /// Bumped to ask the menu bar label, which can open windows, to bring the
+    /// status window forward.
+    @Published private(set) var windowRequests = 0
+    /// The user has enabled the extension at some point. Until then the app
+    /// guides them: it opens its window on launch and stays running after a
+    /// background launch.
+    @Published private(set) var extensionEnabledOnce =
+        UserDefaults.standard.bool(forKey: enabledOnceKey)
+    private static let enabledOnceKey = "extensionEnabledOnce"
+
     /// Last result of a troubleshooting action.
     @Published var message: String?
 
@@ -46,12 +56,7 @@ final class DomainController: ObservableObject {
     private let statusClient = AgentStatusClient()
     /// Session per device last time we looked, to signal domains on changes.
     private var lastSessions: [String: String] = [:]
-    /// When each domain first reported itself not-enabled. A freshly (re-)added
-    /// domain can say so for a second before the system settles, so we only act
-    /// on it once it has stayed that way past `enableGrace` -- otherwise a
-    /// replug would flash the "turn on the extension" notice.
-    private var notEnabledSince: [String: Date] = [:]
-    private let enableGrace: TimeInterval = 6
+    private var onboarding = EnableOnboarding()
 
     /// Where the app runs from. Outside /Applications (e.g. straight from the
     /// DMG, or translocated by Gatekeeper) the helper path would go stale.
@@ -262,25 +267,45 @@ final class DomainController: ObservableObject {
         }
         lastSessions = sessions
 
-        let now = Date()
-        var stillNotEnabled: [String: Date] = [:]
+        let locations = domains.compactMap { domain in
+            FP.deviceKey(of: domain).map {
+                EnableOnboarding.Location(key: $0, connected: sessions[$0] != nil,
+                                          userEnabled: domain.userEnabled)
+            }
+        }
+        let onboard = onboarding.update(locations, now: Date())
         rows = domains.compactMap { domain -> DeviceRow? in
             guard let key = FP.deviceKey(of: domain) else { return nil }
-            // Hold off on "needs enabling" until a not-enabled domain has stayed
-            // that way past the grace period, so a just-added one doesn't flash.
-            var needsEnabling = false
-            if !domain.userEnabled {
-                let since = notEnabledSince[key] ?? now
-                stillNotEnabled[key] = since
-                needsEnabling = now.timeIntervalSince(since) >= enableGrace
-            }
             return DeviceRow(key: key,
                              name: attached.first { $0.key == key }?.name ?? domain.displayName,
                              connected: sessions[key] != nil,
-                             needsEnabling: needsEnabling)
+                             needsEnabling: onboard.needsEnabling.contains(key))
         }.sorted { ($0.connected ? 0 : 1, $0.name) < ($1.connected ? 0 : 1, $1.name) }
-        notEnabledSince = stillNotEnabled
         checked = true
+
+        if !extensionEnabledOnce, locations.contains(where: \.userEnabled) {
+            extensionEnabledOnce = true
+            UserDefaults.standard.set(true, forKey: Self.enabledOnceKey)
+        }
+        if onboard.prompt { requestWindow() }
+        // Not awaited: fileproviderd may take a while, and refreshes must go on.
+        for key in onboard.reveal {
+            log.info("\(key, privacy: .public) enabled; opening it in Finder")
+            Task { await revealWhenReady(key) }
+        }
+    }
+
+    func requestWindow() { windowRequests += 1 }
+
+    /// After a background launch: true if the user still has to enable the
+    /// extension for an attached device, so the app should stay and guide them.
+    /// Waits out the grace period, as a just-added location reports itself
+    /// not-enabled for a moment.
+    func needsFirstEnable() async -> Bool {
+        if extensionEnabledOnce || rows.isEmpty { return false }
+        try? await Task.sleep(for: .seconds(onboarding.grace + 1))
+        await refresh()
+        return rows.contains(where: \.needsEnabling)
     }
 
     /// Troubleshooting: purge every domain of this provider, reinstall the
@@ -328,6 +353,19 @@ final class DomainController: ObservableObject {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+
+    /// Open a just-enabled device in Finder. Its location may take a moment to
+    /// resolve; unlike Show in Finder, never fall back to the CloudStorage folder.
+    private func revealWhenReady(_ key: String) async {
+        for attempt in 1...3 {
+            if let url = try? await FP.manager(forDevice: key)?.getUserVisibleURL(for: .rootContainer) {
+                NSWorkspace.shared.open(url)
+                return
+            }
+            if attempt < 3 { try? await Task.sleep(for: .seconds(1)) }
+        }
+        log.notice("\(key, privacy: .public) enabled but its location didn't resolve; not opening Finder")
     }
 
     func openExtensionSettings() {
