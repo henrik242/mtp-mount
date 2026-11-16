@@ -66,6 +66,11 @@
     font-size: .88em;
     background: var(--code-bg); padding: .12em .4em; border-radius: 5px;
   }
+  pre {
+    background: var(--code-bg); padding: 10px 14px; border-radius: 8px;
+    overflow-x: auto; margin: .5em 0;
+  }
+  pre code { padding: 0; background: none; }
 
   /* Hero */
   header.hero {
@@ -203,6 +208,8 @@
           <a href="https://github.com/henrik242/mtp-mount/releases/latest">Releases page</a>,
           open it, and drag <strong>MtpMount</strong> into <strong>Applications</strong>.
           It must run from Applications.</p>
+        <p>Or install it with <a href="https://brew.sh">Homebrew</a>:</p>
+        <pre><code>brew install --cask henrik242/brew/mtp-mount</code></pre>
       </li>
       <li>
         <strong>Open MtpMount</strong>
@@ -289,7 +296,9 @@
     <h2>Uninstall</h2>
     <p>Open MtpMount, choose <strong>Troubleshooting → Uninstall…</strong>, then move MtpMount to the
       Trash. That removes the helper's LaunchAgent
-      (<code>~/Library/LaunchAgents/no.synth.mtpmount.helper.plist</code>) and the Finder locations.</p>
+      (<code>~/Library/LaunchAgents/no.synth.mtpmount.helper.plist</code>) and the Finder locations.
+      If you installed with Homebrew, run <code>brew uninstall --cask mtp-mount</code> instead of
+      trashing the app.</p>
   </section>
 
   <section id="source">
