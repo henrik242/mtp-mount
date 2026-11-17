@@ -50,6 +50,15 @@ jobs:
             CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" \
             DEVELOPMENT_TEAM="" \
             build
+      - name: Check minimum macOS
+        run: scripts/check-min-os.sh build/Build/Products/Debug/MtpMount.app
+      - name: Pack app for the smoke test
+        run: ditto -c -k --keepParent build/Build/Products/Debug/MtpMount.app MtpMount.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MtpMount-debug
+          path: MtpMount.zip
+          retention-days: 3
       - name: Unit tests
         run: |
           xcodebuild -project MtpMount.xcodeproj -scheme MtpMount \
@@ -59,6 +68,37 @@ jobs:
             DEVELOPMENT_TEAM="" \
             -only-testing:MtpMountTests \
             test
+
+  # Launch the macos-26 build on the oldest hosted Apple Silicon image (15;
+  # hosted 14 is retired). Catches launch-time crashes on an older OS, not
+  # File Provider behaviour.
+  smoke:
+    name: Launch on macOS 15
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MtpMount-debug
+      - name: Unpack
+        run: ditto -x -k MtpMount.zip . && sw_vers
+      - name: Launch and stay up for 15s
+        run: |
+          set -euo pipefail
+          ./MtpMount.app/Contents/MacOS/MtpMount > app.log 2>&1 &
+          pid=$!
+          sleep 15
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" || echo "exit status $?"
+            cat app.log
+            for f in ~/Library/Logs/DiagnosticReports/MtpMount*; do [ -e "$f" ] && head -60 "$f"; done
+            exit 1
+          fi
+          kill "$pid"
+          echo "MtpMount still running after 15s"
+      - name: Clean up helper
+        if: always()
+        run: launchctl bootout "gui/$(id -u)/no.synth.mtpmount.helper" 2>/dev/null || true
 
   shellcheck:
     name: Shellcheck
@@ -88,7 +128,7 @@ jobs:
   # Signed + notarized DMG, attached to the GitHub Release. Uses secrets.
   release:
     name: Signed notarized DMG
-    needs: [build, shellcheck, gate]
+    needs: [build, smoke, shellcheck, gate]
     if: needs.gate.outputs.release == 'true'
     runs-on: macos-26
     permissions:
@@ -147,6 +187,7 @@ jobs:
         run: |
           xcodebuild -project MtpMount.xcodeproj -scheme MtpMount \
             -configuration Release -derivedDataPath build-release build
+          scripts/check-min-os.sh build-release/Build/Products/Release/MtpMount.app
 
       - name: Sign, notarize, DMG
         env:

@@ -155,7 +155,10 @@ The result passes `spctl -a -t open --context context:primary-signature`.
 
 `.github/workflows/ci.yml` runs on an Apple Silicon runner (`macos-26`):
 
-- **build**: on every push/PR, an unsigned compile check (no secrets).
+- **build**: on every push/PR, an unsigned compile check (no secrets) that
+  also checks every binary's minimum macOS against `project.yml`.
+- **smoke**: launches that build on `macos-15`, the oldest hosted Apple Silicon
+  image, and fails if it crashes.
 - **release**: on a `v*` tag, builds Release, runs both scripts, and attaches
   the signed, notarized, stapled DMG to the GitHub Release. It runs only when
   the signing secrets are present and imports them into a temporary keychain
