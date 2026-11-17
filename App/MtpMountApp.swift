@@ -170,20 +170,16 @@ private struct MenuContent: View {
 
             Divider()
 
-            HStack {
+            // Rows reach closer to the edge than the content, as in a menu.
+            VStack(alignment: .leading, spacing: 0) {
                 Button("Open Window") { openWindow(id: "status"); activate() }
-                Spacer()
-                Menu {
-                    Button("About MtpMount") { showAboutPanel() }
-                    Button("Troubleshooting…") { openSettings(); activate() }
-                    Divider()
-                    Button("Quit MtpMount") { NSApp.terminate(nil) }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
+                Button("Troubleshooting…") { openSettings(); activate() }
+                Divider().padding(.vertical, 5).padding(.horizontal, 8)
+                Button("About MtpMount") { showAboutPanel() }
+                Button("Quit MtpMount") { NSApp.terminate(nil) }
             }
+            .buttonStyle(MenuRowStyle())
+            .padding(.horizontal, -8)
         }
         .padding(14)
         .frame(width: 320)
@@ -191,6 +187,32 @@ private struct MenuContent: View {
     }
 
     private func activate() { NSApp.activate() }
+}
+
+/// A full-width row that highlights under the pointer, like a native menu item.
+private struct MenuRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Row(configuration: configuration)
+    }
+
+    private struct Row: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var hovering = false
+
+        var body: some View {
+            let highlighted = hovering && isEnabled
+            configuration.label
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(highlighted ? Color.white : isEnabled ? Color.primary : Color.secondary)
+                .background(RoundedRectangle(cornerRadius: 5)
+                    .fill(highlighted ? Color.accentColor : Color.clear))
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+        }
+    }
 }
 
 // MARK: - Status window
