@@ -66,7 +66,7 @@ within a few seconds.
 
 ### Uninstall
 
-If you installed with Homebrew, run `brew uninstall --cask mtp-mount`.
+If you installed with Homebrew, run `brew uninstall --zap --cask mtp-mount`.
 Otherwise open MtpMount and choose **Troubleshooting → Uninstall…**. Either
 way MtpMount removes its helper, Finder locations, extension data and
 settings, and unregisters itself so it no longer shows under Login Items &
