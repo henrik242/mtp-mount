@@ -5,7 +5,7 @@ clean code, testing), turned into a checklist. Each fix lands as its own commit
 on the working branch; boxes are ticked as they land. Items marked *deferred*
 or *won't fix* carry the reason inline.
 
-Platform decision: Apple Silicon only, latest macOS/Xcode (no Intel support).
+Platform decision: Apple Silicon only, macOS 14+, latest Xcode (no Intel support).
 
 ## Build & CI
 - [x] CI builds every branch push (so each fix is compile-checked)

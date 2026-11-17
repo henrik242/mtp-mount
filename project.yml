@@ -5,7 +5,7 @@ options:
   # framework), so there are no third-party dylibs and no minimum-OS floor
   # beyond the APIs used.
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "14.0"
   createIntermediateGroups: true
   minimumXcodeGenVersion: "2.40.0"
 

@@ -8,7 +8,7 @@ the device appears in Finder's sidebar under Locations and under
 Device I/O is a self-contained PTP/MTP implementation over Apple's
 **IOUSBHost**, with no libmtp and no third-party dependencies.
 
-Requires an Apple Silicon Mac on the latest macOS.
+Requires an Apple Silicon Mac on macOS 14 Sonoma or later.
 
 ## Install
 
@@ -25,14 +25,16 @@ drag **MtpMount** to **Applications** (it must run from there).
    phone, tap the USB notification and choose **File transfer**.
 3. Allow MtpMount in Finder. macOS asks once before an app can add a
    location to Finder, as with Dropbox or Google Drive. When you connect your
-   first device, MtpMount brings up its window with a button that opens
-   **System Settings → General → Login Items & Extensions**. There:
-   1. Under **Extensions**, click ⓘ next to MtpMount. If it's not there,
-      look under **File Providers**.
-   2. Turn on **File Provider**.
+   first device, MtpMount brings up its window with a button for the next step.
+   - **macOS 15 and later**: the button opens **System Settings → General →
+     Login Items & Extensions**. There, under **Extensions**, click ⓘ next to
+     MtpMount (if it's not there, look under **File Providers**) and turn on
+     **File Provider**.
+   - **macOS 14**: the button opens the location in Finder. Click **Enable**
+     at the top of the window.
 
    The device then opens in Finder and appears in the sidebar under its own
-   name (e.g. "Galaxy S25").
+   name (e.g. "Galaxy S25"; on macOS 14, under "MtpMount").
 
 ## Usage
 

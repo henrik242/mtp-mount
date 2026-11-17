@@ -427,8 +427,21 @@ final class DomainController: ObservableObject {
         log.notice("\(key, privacy: .public) enabled but its location didn't resolve; not opening Finder")
     }
 
+    /// The onboarding button. Before 15 there is no settings switch: Finder
+    /// shows an Enable bar on the disabled location itself.
+    func startEnabling() async {
+        if #available(macOS 15, *) {
+            openExtensionSettings()
+        } else if let row = rows.first(where: \.needsEnabling) {
+            await showInFinder(row)
+        }
+    }
+
     func openExtensionSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+        // Before 15, extensions are under Privacy & Security, not Login Items.
+        let pane = if #available(macOS 15, *) { "com.apple.LoginItems-Settings.extension" }
+                   else { "com.apple.ExtensionsPreferences" }
+        if let url = URL(string: "x-apple.systempreferences:\(pane)") {
             NSWorkspace.shared.open(url)
         }
     }

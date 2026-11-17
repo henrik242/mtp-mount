@@ -243,6 +243,21 @@ private struct WarningsView: View {
     @EnvironmentObject var controller: DomainController
     var compact: Bool = false
 
+    private var enableSteps: (button: String, steps: String) {
+        if #available(macOS 15, *) {
+            ("Open System Settings", """
+             1. Click Open System Settings.
+             2. Under Extensions, click ⓘ next to MtpMount. If it's not there, look under File Providers.
+             3. Turn on File Provider.
+             """)
+        } else {
+            ("Open in Finder", """
+             1. Click Open in Finder.
+             2. Click Enable at the top of the Finder window.
+             """)
+        }
+    }
+
     var body: some View {
         if !controller.isInApplicationsFolder {
             Notice(symbol: "exclamationmark.triangle.fill", tint: .orange,
@@ -256,12 +271,10 @@ private struct WarningsView: View {
                        ? "macOS asks once before an app can add a location to Finder."
                        : """
                          macOS asks once before an app can add a location to Finder, as with Dropbox or Google Drive.
-                         1. Click Open System Settings.
-                         2. Under Extensions, click ⓘ next to MtpMount. If it's not there, look under File Providers.
-                         3. Turn on File Provider.
+                         \(enableSteps.steps)
                          Your device then opens in Finder.
                          """) {
-                Button("Open System Settings") { controller.openExtensionSettings() }
+                Button(enableSteps.button) { Task { await controller.startEnabling() } }
                     .buttonStyle(.borderedProminent)
             }
         }
