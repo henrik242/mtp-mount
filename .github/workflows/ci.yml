@@ -35,7 +35,7 @@ jobs:
     name: Build (unsigned compile check)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tools
         run: brew install xcodegen
       - name: Toolchain
@@ -54,7 +54,7 @@ jobs:
         run: scripts/check-min-os.sh build/Build/Products/Debug/MtpMount.app
       - name: Pack app for the smoke test
         run: ditto -c -k --keepParent build/Build/Products/Debug/MtpMount.app MtpMount.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: MtpMount-debug
           path: MtpMount.zip
@@ -75,9 +75,9 @@ jobs:
   smoke:
     name: Launch on macOS 15
     needs: build
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: MtpMount-debug
       - name: Unpack
@@ -104,7 +104,7 @@ jobs:
     name: Shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: shellcheck scripts/*.sh
 
   # Decide whether the signed release job should run: only on a v* tag AND only
@@ -134,7 +134,7 @@ jobs:
     permissions:
       contents: write # create/attach release assets
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tools
         run: brew install xcodegen
 
@@ -202,7 +202,7 @@ jobs:
           ./scripts/make-dmg.sh "$APP" "dist/MtpMount-$VERSION.dmg" --notarize
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MtpMount-dmg
           path: dist/*.dmg
